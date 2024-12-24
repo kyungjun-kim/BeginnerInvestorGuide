@@ -11,7 +11,7 @@ jobs:
 
             # Github Repository checkout
             - name: Checkout Repository
-              uses: actions/chechout@v4
+              uses: actions/checkout@v4
             
             # Show AWS version
             - name: Show AWS version
