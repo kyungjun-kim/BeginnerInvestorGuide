@@ -40,11 +40,11 @@ jobs:
       - name: Copy Airflow Project to Worker Nodes
         run: |
           ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@${{ secrets.WORKER1_PRIVATE_IP }} 'mkdir -p /home/ec2-user/airflow_project'"
-          ssh -A ec2-user@${{ secrets.MASTER_IP }} "scp -r /home/ec2-user/airflow_project ec2-user@${{ secrets.WORKER1_PRIVATE_IP }}:/home/ec2-user/"
+          ssh -A ec2-user@${{ secrets.MASTER_IP }} "rsync -avz /home/ec2-user/airflow_project ec2-user@${{ secrets.WORKER1_PRIVATE_IP }}:/home/ec2-user/"
           ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@${{ secrets.WORKER2_PRIVATE_IP }} 'mkdir -p /home/ec2-user/airflow_project'"
-          ssh -A ec2-user@${{ secrets.MASTER_IP }} "scp -r /home/ec2-user/airflow_project ec2-user@${{ secrets.WORKER2_PRIVATE_IP }}:/home/ec2-user/"
+          ssh -A ec2-user@${{ secrets.MASTER_IP }} "rsync -avz /home/ec2-user/airflow_project ec2-user@${{ secrets.WORKER2_PRIVATE_IP }}:/home/ec2-user/"
           ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@${{ secrets.WORKER3_PRIVATE_IP }} 'mkdir -p /home/ec2-user/airflow_project'"
-          ssh -A ec2-user@${{ secrets.MASTER_IP }} "scp -r /home/ec2-user/airflow_project ec2-user@${{ secrets.WORKER3_PRIVATE_IP }}:/home/ec2-user/"
+          ssh -A ec2-user@${{ secrets.MASTER_IP }} "rsync -avz /home/ec2-user/airflow_project ec2-user@${{ secrets.WORKER3_PRIVATE_IP }}:/home/ec2-user/"
 
       - name: Debug Environment Variables
         run: |
@@ -71,6 +71,6 @@ jobs:
       #    ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@${{ secrets.WORKER2_PRIVATE_IP }} 'docker build --no-cache -t airflow-worker -f /home/ec2-user/airflow_project/airflow/Dockerfile /home/ec2-user/airflow_project/airflow && docker run -d airflow-worker'"
       #    ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@${{ secrets.WORKER3_PRIVATE_IP }} 'docker build --no-cache -t airflow-worker -f /home/ec2-user/airflow_project/airflow/Dockerfile /home/ec2-user/airflow_project/airflow && docker run -d airflow-worker'"
       
-      - name: Start Airflow on Master
+      - name: Start Airflow on Master and DB upgrade
         run: |
-          ssh ec2-user@${{ secrets.MASTER_IP }} "cd /home/ec2-user/airflow_project/airflow && docker-compose down && docker-compose up -d"
+          ssh ec2-user@${{ secrets.MASTER_IP }} "cd /home/ec2-user/airflow_project/airflow && docker-compose down && airflow db upgrade && docker-compose up -d"
