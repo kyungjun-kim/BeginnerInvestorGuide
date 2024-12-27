@@ -1,4 +1,4 @@
-name: Deploy to EC2 and Set Up Airflow
+name: Deploy to EC2 and Set Up Airflow v2
 
 on:
   push:
