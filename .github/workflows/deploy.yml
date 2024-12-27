@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - junho-dev
+      - github-action-hyerim
 
 jobs:
   deploy:
