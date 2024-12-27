@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - github-action-hyerim
+      - feat/github-action-hyerim
 
 jobs:
   deploy:
@@ -65,11 +65,11 @@ jobs:
           sudo rm -rf /var/cache/apt/archives/*
           df -h
 
-      - name: Deploy to Worker Nodes (Via Master Node)
-        run: |
-          ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@${{ secrets.WORKER1_PRIVATE_IP }} 'docker build --no-cache -t airflow-worker -f /home/ec2-user/airflow_project/airflow/Dockerfile /home/ec2-user/airflow_project/airflow && docker run -d airflow-worker'"
-          ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@${{ secrets.WORKER2_PRIVATE_IP }} 'docker build --no-cache -t airflow-worker -f /home/ec2-user/airflow_project/airflow/Dockerfile /home/ec2-user/airflow_project/airflow && docker run -d airflow-worker'"
-          ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@${{ secrets.WORKER3_PRIVATE_IP }} 'docker build --no-cache -t airflow-worker -f /home/ec2-user/airflow_project/airflow/Dockerfile /home/ec2-user/airflow_project/airflow && docker run -d airflow-worker'"
+      # - name: Deploy to Worker Nodes (Via Master Node)
+      #  run: |
+      #    ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@${{ secrets.WORKER1_PRIVATE_IP }} 'docker build --no-cache -t airflow-worker -f /home/ec2-user/airflow_project/airflow/Dockerfile /home/ec2-user/airflow_project/airflow && docker run -d airflow-worker'"
+      #    ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@${{ secrets.WORKER2_PRIVATE_IP }} 'docker build --no-cache -t airflow-worker -f /home/ec2-user/airflow_project/airflow/Dockerfile /home/ec2-user/airflow_project/airflow && docker run -d airflow-worker'"
+      #    ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@${{ secrets.WORKER3_PRIVATE_IP }} 'docker build --no-cache -t airflow-worker -f /home/ec2-user/airflow_project/airflow/Dockerfile /home/ec2-user/airflow_project/airflow && docker run -d airflow-worker'"
       
       - name: Start Airflow on Master
         run: |
