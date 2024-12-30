@@ -25,8 +25,8 @@ jobs:
     
             - name: Sync Master Node
               run: |
-                ssh ec2-user@${{ secrets.MASTER_IP }} "mkdir -p /home/ec2-user/airflow_project"
-                scp -r * ec2-user@${{ secrets.MASTER_IP }}:/home/ec2-user/airflow_project
+                ssh ec2-user@${{ secrets.MASTER_IP }} "mkdir -p /home/ec2-user/airflow_project_v2"
+                scp -r * ec2-user@${{ secrets.MASTER_IP }}:/home/ec2-user/airflow_project_v2
     
             - name: Load .env to Master Node and Apply Environment Variables (Before Worker Deploy)
               run: |
@@ -37,7 +37,7 @@ jobs:
                     source ~/.bashrc
                     "
     
-            - name: Deploy to Worker Nodes (Docker Build and Cleanup)
+            - name: Build to Worker Nodes (Docker Build and Cleanup)
               run: |
                 ssh -A ec2-user@${{ secrets.MASTER_IP }} "
                     ssh ec2-user@${{ secrets.WORKER1_PRIVATE_IP }} '
