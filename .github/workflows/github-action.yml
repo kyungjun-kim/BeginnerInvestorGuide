@@ -44,7 +44,7 @@ jobs:
                     docker stop airflow-worker || true &&
                     docker rm airflow-worker || true &&
                     docker image prune -af &&
-                    docker build --pull -t airflow-worker -f /home/ec2-user/airflow_project_v2/airflow/Dockerfile /home/ec2-user/airflow_project/airflow
+                    docker build --pull -t airflow-worker -f /home/ec2-user/airflow_project_v2/airflow/Dockerfile /home/ec2-user/airflow_project_v2/airflow
                     ' &&
                     ssh ec2-user@${{ secrets.WORKER2_PRIVATE_IP }} '
                     docker stop airflow-worker || true &&
