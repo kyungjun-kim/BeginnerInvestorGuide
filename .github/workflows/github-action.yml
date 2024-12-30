@@ -31,7 +31,7 @@ jobs:
             - name: Load .env to Master Node and Apply Environment Variables (Before Worker Deploy)
               run: |
                 ssh ec2-user@${{ secrets.MASTER_IP }} "
-                    cd /home/ec2-user/airflow_project/airflow &&
+                    cd /home/ec2-user/airflow_project_v2/airflow &&
                     export \$(cat .env | xargs) &&
                     echo \"AIRFLOW__CORE__SQL_ALCHEMY_CONN=\$AIRFLOW__CORE__SQL_ALCHEMY_CONN\" >> ~/.bashrc &&
                     source ~/.bashrc
@@ -44,19 +44,19 @@ jobs:
                     docker stop airflow-worker || true &&
                     docker rm airflow-worker || true &&
                     docker image prune -af &&
-                    docker build --pull -t airflow-worker -f /home/ec2-user/airflow_project/airflow/Dockerfile /home/ec2-user/airflow_project/airflow
+                    docker build --pull -t airflow-worker -f /home/ec2-user/airflow_project_v2/airflow/Dockerfile /home/ec2-user/airflow_project/airflow
                     ' &&
                     ssh ec2-user@${{ secrets.WORKER2_PRIVATE_IP }} '
                     docker stop airflow-worker || true &&
                     docker rm airflow-worker || true &&
                     docker image prune -af &&
-                    docker build --pull -t airflow-worker -f /home/ec2-user/airflow_project/airflow/Dockerfile /home/ec2-user/airflow_project/airflow
+                    docker build --pull -t airflow-worker -f /home/ec2-user/airflow_project_v2/airflow/Dockerfile /home/ec2-user/airflow_project_v2/airflow
                     ' &&
                     ssh ec2-user@${{ secrets.WORKER3_PRIVATE_IP }} '
                     docker stop airflow-worker || true &&
                     docker rm airflow-worker || true &&
                     docker image prune -af &&
-                    docker build --pull -t airflow-worker -f /home/ec2-user/airflow_project/airflow/Dockerfile /home/ec2-user/airflow_project/airflow
+                    docker build --pull -t airflow-worker -f /home/ec2-user/airflow_project_v2/airflow/Dockerfile /home/ec2-user/airflow_project_v2/airflow
                     '
                 "
             
@@ -75,7 +75,7 @@ jobs:
             - name: Initialize Airflow (DB Init)
               run: |
                 ssh ec2-user@${{ secrets.MASTER_IP }} "
-                    cd /home/ec2-user/airflow_project/airflow &&
+                    cd /home/ec2-user/airflow_project_v2/airflow &&
                     docker-compose down &&
                     docker-compose up -d &&
                     docker-compose exec -T airflow-webserver env PGPASSWORD='postgres' psql \
@@ -109,8 +109,8 @@ jobs:
     
             - name: Sync Master Node
               run: |
-                ssh ec2-user@${{ secrets.MASTER_IP }} "mkdir -p /home/ec2-user/airflow_project"
-                scp -r * ec2-user@${{ secrets.MASTER_IP }}:/home/ec2-user/airflow_project
+                ssh ec2-user@${{ secrets.MASTER_IP }} "mkdir -p /home/ec2-user/airflow_project_v2"
+                scp -r * ec2-user@${{ secrets.MASTER_IP }}:/home/ec2-user/airflow_project_v2
 
             - name: Deploy to Worker Nodes (Docker Run)
               run: |
@@ -123,7 +123,7 @@ jobs:
             - name: Start Airflow on Master
               run: |
                 ssh ec2-user@${{ secrets.MASTER_IP }} "
-                    cd /home/ec2-user/airflow_project/airflow &&
+                    cd /home/ec2-user/airflow_project_v2/airflow &&
                     docker-compose down &&
                     docker-compose up -d &&
                     docker-compose exec -T airflow-webserver airflow db upgrade &&
