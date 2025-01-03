@@ -3,11 +3,11 @@ name: Build and Deploy Airflow to EC2
 on:
     push:
         branches:
-        - main
+        - develop
         - feat/github-action-hyerim
 
 env:
-    PROJECT_DIR: /home/ec2-user/airflow_project_v2
+    PROJECT_DIR: /home/ec2-user/airflow_project
     WORKER_IPS: ${{ secrets.WORKER1_PRIVATE_IP }} ${{ secrets.WORKER2_PRIVATE_IP }} ${{ secrets.WORKER3_PRIVATE_IP }}
 
 jobs:
