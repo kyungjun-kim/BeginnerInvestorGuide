@@ -41,10 +41,11 @@ jobs:
                     export \$(cat .env | xargs) &&
                     echo 'export \$(cat $PROJECT_DIR/airflow/.env | xargs)' >> ~/.bashrc &&
                     source ~/.bashrc
+                    "
                 
             - name: Set Permissions on Logs Directory (Master Node)
               run: |
-                ssh ec2-user@${{ secrets.MASTER_IP }} "
+                ssh -A ec2-user@${{ secrets.MASTER_IP }} "
                 mkdir -p $PROJECT_DIR/airflow/logs &&
                 chmod -R 777 $PROJECT_DIR/airflow/logs
                 "
