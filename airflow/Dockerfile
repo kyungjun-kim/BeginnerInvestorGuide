@@ -50,6 +50,7 @@ RUN python3.9 -m pip install requests==2.31.0
 RUN python3.9 -m pip install s3fs
 RUN python3.9 -m pip install boto3==1.28.64
 RUN python3.9 -m pip install selenium
+RUN python3.9 -m pip install pyperclip
 RUN python3.9 -m pip install webdriver_manager
 RUN pip install --ignore-installed apache-airflow-providers-amazon
 RUN pip install apache-airflow-providers-postgres

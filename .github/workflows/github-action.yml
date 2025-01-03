@@ -6,10 +6,16 @@ on:
         - main
         - feat/github-action-hyerim
 
+env:
+    PROJECT_DIR: /home/ec2-user/airflow_project_v2
+    WORKER_IPS: ${{ secrets.WORKER1_PRIVATE_IP }} ${{ secrets.WORKER2_PRIVATE_IP }} ${{ secrets.WORKER3_PRIVATE_IP }}
+
 jobs:
     build:
         runs-on: ubuntu-latest
-        
+        if: >  
+          contains(github.event.head_commit.message, '[build-trigger]')
+
         steps:
             - name: Checkout repository
               uses: actions/checkout@v3
@@ -25,49 +31,43 @@ jobs:
     
             - name: Sync Master Node
               run: |
-                ssh ec2-user@${{ secrets.MASTER_IP }} "mkdir -p /home/ec2-user/airflow_project_v2"
-                scp -r * ec2-user@${{ secrets.MASTER_IP }}:/home/ec2-user/airflow_project_v2
+                ssh ec2-user@${{ secrets.MASTER_IP }} "mkdir -p $PROJECT_DIR"
+                rsync -avz ./ ec2-user@${{ secrets.MASTER_IP }}:$PROJECT_DIR
     
-            - name: Load .env to Master Node and Apply Environment Variables (Before Worker Deploy)
+            - name: Load .env to Master Node and Apply Environment Variables
               run: |
                 ssh ec2-user@${{ secrets.MASTER_IP }} "
-                    cd /home/ec2-user/airflow_project_v2/airflow &&
+                    cd $PROJECT_DIR/airflow &&
                     export \$(cat .env | xargs) &&
-                    echo \"AIRFLOW__CORE__SQL_ALCHEMY_CONN=\$AIRFLOW__CORE__SQL_ALCHEMY_CONN\" >> ~/.bashrc &&
+                    echo 'export \$(cat $PROJECT_DIR/airflow/.env | xargs)' >> ~/.bashrc &&
                     source ~/.bashrc
-                    "
+                
+            - name: Set Permissions on Logs Directory (Master Node)
+              run: |
+                ssh ec2-user@${{ secrets.MASTER_IP }} "
+                mkdir -p $PROJECT_DIR/airflow/logs &&
+                chmod -R 777 $PROJECT_DIR/airflow/logs
+                "
 
             - name: Copy Airflow Project to Worker Nodes
               run: |
-                ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@${{ secrets.WORKER1_PRIVATE_IP }} 'mkdir -p /home/ec2-user/airflow_project_v2'"
-                ssh -A ec2-user@${{ secrets.MASTER_IP }} "rsync -avz /home/ec2-user/airflow_project_v2 ec2-user@${{ secrets.WORKER1_PRIVATE_IP }}:/home/ec2-user/"
-                ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@${{ secrets.WORKER2_PRIVATE_IP }} 'mkdir -p /home/ec2-user/airflow_project_v2'"
-                ssh -A ec2-user@${{ secrets.MASTER_IP }} "rsync -avz /home/ec2-user/airflow_project_v2 ec2-user@${{ secrets.WORKER2_PRIVATE_IP }}:/home/ec2-user/"
-                ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@${{ secrets.WORKER3_PRIVATE_IP }} 'mkdir -p /home/ec2-user/airflow_project_v2'"
-                ssh -A ec2-user@${{ secrets.MASTER_IP }} "rsync -avz /home/ec2-user/airflow_project_v2 ec2-user@${{ secrets.WORKER3_PRIVATE_IP }}:/home/ec2-user/"
+                for WORKER_IP in $WORKER_IPS; do
+                  ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@$WORKER_IP 'mkdir -p $PROJECT_DIR'"
+                  ssh -A ec2-user@${{ secrets.MASTER_IP }} "rsync -avz $PROJECT_DIR/ ec2-user@$WORKER_IP:$PROJECT_DIR/"
+                done
     
             - name: Build to Worker Nodes (Docker Build and Cleanup)
               run: |
-                ssh -A ec2-user@${{ secrets.MASTER_IP }} "
-                    ssh ec2-user@${{ secrets.WORKER1_PRIVATE_IP }} '
-                    docker stop airflow-worker || true &&
-                    docker rm airflow-worker || true &&
-                    docker image prune -af &&
-                    docker build --pull -t airflow-worker -f /home/ec2-user/airflow_project_v2/airflow/Dockerfile /home/ec2-user/airflow_project_v2/airflow
-                    ' &&
-                    ssh ec2-user@${{ secrets.WORKER2_PRIVATE_IP }} '
-                    docker stop airflow-worker || true &&
-                    docker rm airflow-worker || true &&
-                    docker image prune -af &&
-                    docker build --pull -t airflow-worker -f /home/ec2-user/airflow_project_v2/airflow/Dockerfile /home/ec2-user/airflow_project_v2/airflow
-                    ' &&
-                    ssh ec2-user@${{ secrets.WORKER3_PRIVATE_IP }} '
-                    docker stop airflow-worker || true &&
-                    docker rm airflow-worker || true &&
-                    docker image prune -af &&
-                    docker build --pull -t airflow-worker -f /home/ec2-user/airflow_project_v2/airflow/Dockerfile /home/ec2-user/airflow_project_v2/airflow
+                for WORKER_IP in $WORKER_IPS; do
+                  ssh -A ec2-user@${{ secrets.MASTER_IP }} "
+                    ssh ec2-user@$WORKER_IP '
+                      docker stop airflow-worker || true &&
+                      docker rm airflow-worker || true &&
+                      docker image prune -af &&
+                      docker build --pull -t airflow-worker -f $PROJECT_DIR/airflow/Dockerfile $PROJECT_DIR/airflow
                     '
-                "
+                  "
+                done
             
             - name: Clean up space
               run: |
@@ -84,14 +84,14 @@ jobs:
             - name: Initialize Airflow (DB Init)
               run: |
                 ssh ec2-user@${{ secrets.MASTER_IP }} "
-                    cd /home/ec2-user/airflow_project_v2/airflow &&
+                    cd $PROJECT_DIR/airflow &&
                     docker-compose down &&
                     docker-compose up -d &&
                     docker-compose exec -T airflow-webserver env PGPASSWORD='postgres' psql \
                     -h team6-postgres-for-airflow.ch4xfyi6stod.ap-northeast-2.rds.amazonaws.com \
                     -U postgres \
                     -d airflow \
-                    -c 'SELECT 1;' &&
+                    -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' &&
                     docker-compose exec -T airflow-webserver airflow db init &&
                     docker-compose restart
                 "
@@ -100,8 +100,8 @@ jobs:
 
     deploy:
         runs-on: ubuntu-latest
-        needs: build
-        if: ${{ !contains(github.event.head_commit.message, '[Skip build]') }}
+        needs: [build]
+        if: ${{ always() }}
 
         steps:
             - name: Checkout repository
@@ -116,18 +116,34 @@ jobs:
               run: |
                 echo "${{ secrets.KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
 
+            - name: Sync Master Node
+              run: |
+                ssh ec2-user@${{ secrets.MASTER_IP }} "mkdir -p $PROJECT_DIR"
+                rsync -avz ./ ec2-user@${{ secrets.MASTER_IP }}:$PROJECT_DIR
+
+            - name: Copy Airflow Project to Worker Nodes
+              run: |
+                for WORKER_IP in $WORKER_IPS; do
+                  ssh -A ec2-user@${{ secrets.MASTER_IP }} "ssh ec2-user@$WORKER_IP 'mkdir -p $PROJECT_DIR'"
+                  ssh -A ec2-user@${{ secrets.MASTER_IP }} "rsync -avz $PROJECT_DIR/ ec2-user@$WORKER_IP:$PROJECT_DIR/"
+                done
+
             - name: Deploy to Worker Nodes (Docker Run)
               run: |
-                ssh -A ec2-user@${{ secrets.MASTER_IP }} "
-                    ssh ec2-user@${{ secrets.WORKER1_PRIVATE_IP }} 'docker run -d --name airflow-worker airflow-worker' &&
-                    ssh ec2-user@${{ secrets.WORKER2_PRIVATE_IP }} 'docker run -d --name airflow-worker airflow-worker' &&
-                    ssh ec2-user@${{ secrets.WORKER3_PRIVATE_IP }} 'docker run -d --name airflow-worker airflow-worker'
-                "
+                for WORKER_IP in $WORKER_IPS; do
+                  ssh -A ec2-user@${{ secrets.MASTER_IP }} "
+                    ssh ec2-user@$WORKER_IP '
+                      docker stop airflow-worker || true &&
+                      docker rm airflow-worker || true &&
+                      docker run -d --name airflow-worker airflow-worker
+                    '
+                  "
+                done
               
             - name: Start Airflow on Master
               run: |
                 ssh ec2-user@${{ secrets.MASTER_IP }} "
-                    cd /home/ec2-user/airflow_project_v2/airflow &&
+                    cd $PROJECT_DIR/airflow &&
                     docker-compose down &&
                     docker-compose up -d &&
                     docker-compose exec -T airflow-webserver airflow db upgrade &&
