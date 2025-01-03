@@ -47,7 +47,7 @@ jobs:
               run: |
                 ssh -A ec2-user@${{ secrets.MASTER_IP }} "
                 mkdir -p $PROJECT_DIR/airflow/logs &&
-                chmod -R 777 $PROJECT_DIR/airflow/logs
+                sudo chmod -R 777 $PROJECT_DIR/airflow/logs
                 "
 
             - name: Copy Airflow Project to Worker Nodes
