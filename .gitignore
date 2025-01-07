@@ -3,3 +3,5 @@ airflow/.env
 .idea/
 airflow/dags/tmp.py
 airflow/dags/naverCafeExtract_dag.py
+test
+test/
