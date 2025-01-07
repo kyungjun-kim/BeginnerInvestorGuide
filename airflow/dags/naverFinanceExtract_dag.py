@@ -215,8 +215,8 @@ def s3_upload_task_func(**kwargs):
 
     # S3 업로드 정보
     bucket_name = 'team6-s3'
-    stock_object_key = 'Test/naverFinance/naverFinanceNews.csv'
-    kospi_kosdaq_object_key = 'Test/naverFinance/kospiKosdaqData.csv'
+    stock_object_key = 'raw/naverFinance/naverFinanceNews.csv'
+    kospi_kosdaq_object_key = 'raw/naverFinance/kospiKosdaqData.csv'
 
     upload_to_s3(stock_file_path, bucket_name, stock_object_key)
     upload_to_s3(kospi_kosdaq_file_path, bucket_name, kospi_kosdaq_object_key)
