@@ -218,8 +218,8 @@ with DAG(
         },
     )
 
-    upload_raw_volume_data = PythonOperator(
-        task_id="upload_raw_volume_data",
+    upload_raw_data_to_s3 = PythonOperator(
+        task_id="upload_raw_data_to_s3",
         python_callable=upload_raw_to_s3,
         op_kwargs={
             "task_type": "stock_volume_top10",
@@ -253,7 +253,7 @@ with DAG(
     op_kwargs={"table_name": "transformed_stock_volume"},
 )
 
-    upload_to_redshift_task = PythonOperator(
+    upload_to_redshift = PythonOperator(
         task_id="upload_to_redshift",
         python_callable=upload_to_redshift,
         op_kwargs={
@@ -263,4 +263,4 @@ with DAG(
     )
 
     # 태스크 의존성 설정
-    fetch_volume_data >> upload_raw_to_s3 >> process_volume_data >> upload_transformed_data_to_s3 >> create_table >> upload_to_redshift_task
+    fetch_volume_data >> upload_raw_data_to_s3 >> process_volume_data >> upload_transformed_data_to_s3 >> create_table >> upload_to_redshift
