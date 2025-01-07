@@ -37,9 +37,12 @@ def fetch_data(**kwargs):
 
     response = requests.get(endpoint, headers=headers, params=params)
     data = response.json().get("output", [])
+
+    # 상위 10개 데이터만 가져오기
+    top_10_data = data[:10]
     
     # XCom에 저장
-    kwargs['ti'].xcom_push(key=f"{task_type}_data", value=data)
+    kwargs['ti'].xcom_push(key=f"{task_type}_data", value=top_10_data)
 
 
 
