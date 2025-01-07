@@ -1,0 +1,148 @@
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from datetime import datetime, timedelta
+from airflow.hooks.base import BaseHook
+from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+import requests
+import pandas as pd
+from io import BytesIO
+
+# API 및 S3 설정 가져오기
+def get_koreainvestment_api_conn():
+    conn = BaseHook.get_connection("koreainvestment_api")
+    extra = conn.extra_dejson
+    return {
+        "base_url": conn.host,
+        "app_key": extra.get("app_key"),
+        "app_secret": extra.get("app_secret"),
+        "access_token": extra.get("access_token"),
+    }
+
+# 데이터를 가져오는 함수
+def fetch_data(**kwargs):
+    task_type = kwargs["task_type"]
+    api_conn = get_koreainvestment_api_conn()
+
+    endpoint = f"{api_conn['base_url']}/{kwargs['endpoint']}"
+    headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "authorization": f"Bearer {api_conn['access_token']}",
+        "appkey": api_conn["app_key"],
+        "appsecret": api_conn["app_secret"],
+        "tr_id": kwargs["tr_id"],
+    }
+    params = kwargs["params"]
+
+    response = requests.get(endpoint, headers=headers, params=params)
+    data = response.json().get("output", [])
+    
+    # XCom에 저장
+    kwargs['ti'].xcom_push(key=f"{task_type}_data", value=data)
+
+# 데이터를 처리하는 함수
+def process_data(**kwargs):
+    task_type = kwargs["task_type"]
+    columns = kwargs["columns"]
+
+    # XCom에서 데이터 가져오기
+    data = kwargs['ti'].xcom_pull(key=f"{task_type}_data", task_ids=f"fetch_{task_type}_data")
+
+    # DataFrame 생성
+    df = pd.DataFrame(data[:10], columns=columns)
+
+    # 데이터 변환 작업 수행
+    # 현재가와 거래량 변환: 문자열 -> 정수(int)
+    for col in ["순위", "현재가", "거래량"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col].str.replace(',', ''), errors='coerce').fillna(0).astype(int)
+
+    # 등락률 변환: 문자열(%) -> 실수(float)
+    if "등락률" in df.columns:
+        df["등락률"] = df["등락률"].apply(lambda x: float(x.strip('%')) / 100 if isinstance(x, str) else x)
+
+    # XCom에 처리된 데이터 저장
+    kwargs['ti'].xcom_push(key=f"{task_type}_df", value=df.to_dict())
+
+# 데이터를 S3에 업로드하는 함수
+def upload_to_s3(**kwargs):
+    task_type = kwargs["task_type"]
+    file_name_prefix = kwargs["file_name_prefix"]   # 파일 이름 접두어
+    bucket_path = kwargs["bucket_path"]
+
+    # XCom에서 데이터 가져오기
+    data_key = f"{task_type}_data" if bucket_path == "raw_data" else f"{task_type}_df"
+    data = kwargs['ti'].xcom_pull(key=data_key, task_ids=f"{'fetch' if bucket_path == 'raw_data' else 'process'}_{task_type}_data")
+
+    # 데이터프레임 생성
+    df = pd.DataFrame(data) if bucket_path == "raw_data" else pd.DataFrame.from_dict(data)
+
+    # S3 업로드
+    s3_hook = S3Hook(aws_conn_id="aws_default")
+    s3_client = s3_hook.get_conn()
+
+    buffer = BytesIO()
+    df.to_csv(buffer, index=False)
+    buffer.seek(0)
+    file_name = f"{file_name_prefix}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    s3_client.upload_fileobj(buffer, "team6-s3", f"{bucket_path}/{file_name}")
+
+# DAG 정의
+default_args = {
+    "owner": "airflow",
+    "depends_on_past": False,
+    "retries": 1,
+    "retry_delay": timedelta(minutes=5),
+    "start_date": datetime(2025, 1, 1),
+}
+
+with DAG(
+    dag_id="stock_ranking_data_pipeline",
+    default_args=default_args,
+    description="데이터 가져오기, 처리하기, S3 업로드 순서로 작업 구성",
+    schedule_interval="@daily",
+    catchup=False,
+) as dag:
+
+    # 거래량 데이터 작업
+    fetch_volume_data = PythonOperator(
+        task_id="fetch_volume_data",
+        python_callable=fetch_data,
+        op_kwargs={
+            "task_type": "stock_volume_top10",
+            "endpoint": "uapi/domestic-stock/v1/quotations/volume-rank",
+            "tr_id": "FHPST01710000",
+            "params": {"FID_COND_MRKT_DIV_CODE": "J"},
+        },
+    )
+
+    upload_raw_volume_data = PythonOperator(
+        task_id="upload_raw_volume_data",
+        python_callable=upload_to_s3,
+        op_kwargs={
+            "task_type": "stock_volume_top10",
+            "file_name_prefix": "raw_stock_volume_top10",  # 변환 전 파일 이름 접두어
+            "bucket_path": "raw_data",
+        },
+    )    
+
+    process_volume_data = PythonOperator(
+        task_id="process_volume_data",
+        python_callable=process_data,
+        op_kwargs={
+            "task_type": "stock_volume_top10",
+            "columns": ["data_rank", "mksc_shrn_iscd", "hts_kor_isnm", "stck_prpr", "acml_vol", "prdy_ctrt"],
+        },
+    )
+
+    upload_transformed_volume_data = PythonOperator(
+        task_id="upload_volume_data",
+        python_callable=upload_to_s3,
+        op_kwargs={
+            "task_type": "stock_volume_top10",
+            "file_name_prefix": "transformed_stock_volume_top10",  # 변환 후 파일 이름 접두어
+            "bucket_path": "transformed_data",
+        },
+    )
+
+    # 태스크 의존성 설정
+    fetch_volume_data >> upload_raw_volume_data >> process_volume_data >> upload_transformed_volume_data
