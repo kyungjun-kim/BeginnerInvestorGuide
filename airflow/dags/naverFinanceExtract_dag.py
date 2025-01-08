@@ -38,7 +38,7 @@ def crawl_stock_data(**kwargs):
     options = webdriver.ChromeOptions()
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    options.add_argument("headless")
+    #options.add_argument("headless")
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
     today = datetime.now().strftime('%Y.%m.%d')
@@ -122,7 +122,7 @@ def crawl_kospi_kosdaq_data(**kwargs):
     options = webdriver.ChromeOptions()
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    options.add_argument("headless")
+    #options.add_argument("headless")
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
     url_kospi = 'https://m.stock.naver.com/domestic/index/KOSPI/total'
