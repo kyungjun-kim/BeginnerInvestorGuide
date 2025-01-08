@@ -1,7 +1,6 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-from airflow.hooks.base import BaseHook
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -32,25 +31,7 @@ dag = DAG(
     description='주식 커뮤니티(Clien, FMKorea) 게시글 크롤링 DAG',
     schedule_interval='@daily',
     catchup=False
-)
-
-# Upload to S3
-def upload_to_s3(file_path, bucket_name, object_key):
-    aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
-    aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
-
-    s3_client = boto3.client(
-        's3',
-        aws_access_key_id= "${{ secrets.AWS_ACCESS_KEY_ID}}",
-        aws_secret_access_key= "${{ secrets.AWS_SECRET_ACCESS_KEY}}"
-    )
-
-    try:
-        s3_client.upload_file(file_path, bucket_name, object_key)
-        print(f"파일이 S3에 업로드되었습니다: s3://{bucket_name}/{object_key}")
-    except Exception as e:
-        print(f"S3 업로드 실패: {e}")
-        
+)        
 
 # Initialize WebDriver
 def init_driver():
@@ -65,7 +46,7 @@ def init_driver():
     return driver
 
 # Crawling FMkorea community posts
-def crawl_fmkorea_posts(base_url):
+def get_fmkorea_posts(base_url):
     driver = init_driver()
     posts = []
     
@@ -211,3 +192,46 @@ def get_clien_posts(base_url):
         page += 1
     return posts
 
+# Process of crawling and Save data
+def crawl_and_save_data(**kwargs):
+    ti = kwargs['ti']
+    clien_url = "https://www.clien.net/service/board/cm_stock"
+    fm_url = "https://www.fmkorea.com/index.php?mid=stock&category=2997203870"
+    
+    clien_posts = get_clien_posts(clien_url)
+    fm_posts = get_fmkorea_posts(fm_url)
+    
+    crawling_df = pd.DataFrame(clien_posts + fm_posts)
+    csv_path = f"/tmp/community_crawling_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    crawling_df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+    
+    print("[Done] Create community crawling csv file.")
+    ti.xcom_push(key='csv_path', value=csv_path)
+    
+    
+# Upload to S3
+def upload_to_s3(**kwargs):
+    ti = kwargs['ti']
+    csv_path = ti.xcom_pull(task_ids='crawl_and_save_data', key='csv_path')
+
+    s3_hook = S3Hook(aws_conn_id='aws_default')
+    s3_hook.load_file(
+        filename=csv_path,
+        bucket_name='team6-s3',
+        replace=True,
+        key=f"raw_data/{os.path.basename(csv_path)}"
+    )
+
+crawl_and_save_task = PythonOperator(
+    task_id='crawl_and_save_data',
+    python_callable=crawl_and_save_data,
+    dag=dag
+)
+
+upload_s3_task = PythonOperator(
+    task_id='upload_to_s3',
+    python_callable=upload_to_s3,
+    dag=dag
+)
+
+crawl_and_save_task >> upload_s3_task
