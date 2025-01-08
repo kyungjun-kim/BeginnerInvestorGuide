@@ -2,6 +2,7 @@
 airflow/.env
 .idea/
 airflow/dags/tmp.py
-airflow/dags/stockRanking_dag.py
+airflow/dags/stock_ranking_dag.py
+airflow/modules/
 test
 test/

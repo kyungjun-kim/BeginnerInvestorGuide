@@ -63,7 +63,6 @@ RUN airflow db init
 RUN mkdir ${AIRFLOW_HOME}/dags
 RUN mkdir ${AIRFLOW_HOME}/plugins
 RUN mkdir ${AIRFLOW_HOME}/data
-RUN mkdir ${AIRFLOW_HOME}/modules
 
 # Google Chrome 설치
 RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - && \

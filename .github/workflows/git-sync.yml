@@ -3,7 +3,7 @@ name: Sync Airflow DAGs and Modules
 on:
   push:
     branches:
-      - myeongju-dev
+      - develop
 
 env:
   MASTER_DAGS_DIR: /home/ec2-user/airflow_master/dags
@@ -29,14 +29,13 @@ jobs:
         run: |
           echo "${{ secrets.KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
 
-      - name: Sync DAGs and Modules to Master Node
+      - name: Sync DAGs to Master Node
         run: |
           ssh ec2-user@${{ secrets.MASTER_IP }} 'cp /etc/skel/.bashrc ~/.bashrc' && 
-          scp -r ./airflow/dags/* ec2-user@${{ secrets.MASTER_IP }}:$MASTER_DAGS_DIR &&
-          scp -r ./airflow/modules/* ec2-user@${{ secrets.MASTER_IP }}:$MASTER_MODULES_DIR
+          scp -r ./airflow/dags/* ec2-user@${{ secrets.MASTER_IP }}:$MASTER_DAGS_DIR
 
-      - name: Sync DAGs and Modules to Worker Nodes
+      - name: Sync DAGsdules to Worker Nodes
         run: |
           for WORKER_IP in $WORKER_IPS; do
-            ssh -A ec2-user@${{ secrets.MASTER_IP }} "scp -r $MASTER_DAGS_DIR/* ec2-user@$WORKER_IP:$WORKER_DAGS_DIR && "scp -r $MASTER_MODULES_DIR/* ec2-user@$WORKER_IP:$WORKER_MODULES_DIR" 
+            ssh -A ec2-user@${{ secrets.MASTER_IP }} "scp -r $MASTER_DAGS_DIR/* ec2-user@$WORKER_IP:$WORKER_DAGS_DIR" 
           done
