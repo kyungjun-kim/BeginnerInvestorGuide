@@ -30,9 +30,9 @@ def crawl_stock_data(**kwargs):
 
     today = datetime.now().strftime('%Y.%m.%d')
     url = 'https://m.stock.naver.com/investment/research/company'
-
+    
     text_list = []
-    cols = ["date", "stock_code", "stock_name", "investment_opinion", "target_price", "current_price", "title", "text", "url"]
+    cols = ["date", "stockCode", "stockName", "investmentOpinion", "targetPrice", "currentPrice", "title", "text", "url"]
 
     try : 
         driver.get(url)
@@ -58,19 +58,21 @@ def crawl_stock_data(**kwargs):
 
             news_url = driver.current_url
 
-            stock_code = driver.find_element(By.CLASS_NAME, 'HeaderResearch_tag__qwHzD').text.replace(stock_name, "")
+            stock_code = int(driver.find_element(By.CLASS_NAME, 'HeaderResearch_tag__qwHzD').text.replace(stock_name, ""))
 
             investment_opinion = driver.find_element(By.CLASS_NAME, 'ResearchConsensus_text__BFWiw').text
 
             try:
-                target_price = driver.find_element(By.CLASS_NAME, 'ResearchConsensus_price___VI3M').text.split("\n")[-1]
+                target_price_text = driver.find_element(By.CLASS_NAME, 'ResearchConsensus_price___VI3M').text.split("\n")[-1]
+                target_price = int(target_price_text.replace(",", "").replace("원", ""))
             except:
-                target_price = "주가정보없음"
+                target_price = None
 
             try:
-                current_price = driver.find_element(By.CLASS_NAME, 'ResearchConsensus_price_today__zpk_T').text.split("\n")[-1]
+                current_price_text = driver.find_element(By.CLASS_NAME, 'ResearchConsensus_price_today__zpk_T').text.split("\n")[-1]
+                current_price = int(current_price_text.replace(",", "").replace("원", ""))
             except:
-                current_price = "주가정보없음"
+                current_price = None
 
             title = driver.find_element(By.CLASS_NAME, 'ResearchContent_text_area__BsfMF').text.split('\n')[0]
             
@@ -128,28 +130,20 @@ def crawl_kospi_kosdaq_data(**kwargs):
 
         # 데이터 저장
         data.append({
-            '칼럼명': '코스피 지수',
-            '내용': '코스피 지수',
-            'type': 'float',
-            '예시': kospi_index
+            'indexName': "kospi_index",
+            'value': kospi_index
         })
         data.append({
-            '칼럼명': '코스피 변화량',
-            '내용': '코스피 변화량',
-            'type': 'float',
-            '예시': kospi_rate
+            'indexName': 'kospi_rate',
+            'value': kospi_rate
         })
         data.append({
-            '칼럼명': '코스닥 지수',
-            '내용': '코스닥 지수',
-            'type': 'float',
-            '예시': kosdaq_index
+            'indexName': 'kosdaq_index',
+            'value': kosdaq_index
         })
         data.append({
-            '칼럼명': '코스닥 변화량',
-            '내용': '코스닥 변화량',
-            'type': 'float',
-            '예시': kosdaq_rate
+            'indexName': 'kosdaq_rate',
+            'value': kosdaq_rate
         })
 
         # DataFrame 생성
@@ -194,7 +188,7 @@ def create_redshift_tables(**kwargs):
 
     # 테이블 생성 SQL (naverNews 테이블)
     create_naver_news_table_sql = """
-    CREATE TABLE IF NOT EXISTS dev.naverNews (
+    CREATE TABLE IF NOT EXISTS naverNews (
         date DATE,
         stockCode INT,
         stockName VARCHAR(40),
@@ -209,10 +203,9 @@ def create_redshift_tables(**kwargs):
 
     # 테이블 생성 SQL (kospiKosdaqData 테이블)
     create_kospi_kosdaq_table_sql = """
-    CREATE TABLE IF NOT EXISTS dev.kospiKosdaqData (
+    CREATE TABLE IF NOT EXISTS kospiKosdaqData (
         indexName VARCHAR(20),
-        value FLOAT,
-        changeRate FLOAT
+        value VARCHAR(40)
     );
     """
 
@@ -223,7 +216,7 @@ def create_redshift_tables(**kwargs):
     cursor.close()
     conn.close()
 
-    print("Redshift 테이블 dev.naverNews 및 dev.kospiKosdaqData가 성공적으로 생성되었습니다.")
+    print("Redshift 테이블 naverNews 및 kospiKosdaqData가 성공적으로 생성되었습니다.")
 
 # Redshift에 데이터 적재 함수
 def upload_to_redshift(**kwargs):
@@ -246,7 +239,7 @@ def upload_to_redshift(**kwargs):
 
     # COPY 명령 실행 (S3 데이터를 Redshift로 로드)
     copy_sql = f"""
-    COPY dev.{table_name}
+    COPY {table_name}
     FROM '{s3_path}'
     ACCESS_KEY_ID '{access_key}'
     SECRET_ACCESS_KEY '{secret_key}'
@@ -257,7 +250,7 @@ def upload_to_redshift(**kwargs):
     cursor.close()
     conn.close()
 
-    print(f"{task_type} 데이터를 Redshift 테이블 dev.{table_name}에 적재 완료.")
+    print(f"{task_type} 데이터를 Redshift 테이블 {table_name}에 적재 완료.")
 
 # DAG 정의
 dag = DAG(
@@ -292,8 +285,8 @@ def s3_upload_task_func(**kwargs):
 
     # S3 업로드 정보
     bucket_name = 'team6-s3'
-    stock_object_key = 'raw/naverFinance/naverFinanceNews.csv'
-    kospi_kosdaq_object_key = 'raw/naverFinance/kospiKosdaqData.csv'
+    stock_object_key = 'raw_data/naverFinance/naverFinanceNews.csv'
+    kospi_kosdaq_object_key = 'raw_data/naverFinance/kospiKosdaqData.csv'
 
     # 파일 업로드
     upload_to_s3(stock_file_path, bucket_name, stock_object_key)
