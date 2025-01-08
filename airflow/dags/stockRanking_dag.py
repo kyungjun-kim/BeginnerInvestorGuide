@@ -61,7 +61,7 @@ def upload_raw_to_s3(**kwargs):
     df = pd.DataFrame(data)
 
     # S3 업로드
-    s3_hook = S3Hook(aws_conn_id="aws_default")
+    s3_hook = S3Hook(aws_conn_id="aws_conn")
     s3_client = s3_hook.get_conn()
 
     buffer = BytesIO()
@@ -115,7 +115,7 @@ def upload_transformed_to_s3(**kwargs):
     df = pd.DataFrame.from_dict(data)
 
     # S3 업로드
-    s3_hook = S3Hook(aws_conn_id="aws_default")
+    s3_hook = S3Hook(aws_conn_id="aws_conn")
     s3_client = s3_hook.get_conn()
 
     buffer = BytesIO()

@@ -2,8 +2,6 @@
 airflow/.env
 .idea/
 airflow/dags/tmp.py
-airflow/dags/stock_ranking_dag.py
-airflow/dags/naverCafeExtract_dag.py
+airflow/dags/stockRanking_dag.py
 test
 test/
-modules/
