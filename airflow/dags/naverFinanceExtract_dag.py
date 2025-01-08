@@ -1,5 +1,6 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.hooks.base import BaseHook
 from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -20,12 +21,24 @@ default_args = {
     'retry_delay': timedelta(minutes=5),
 }
 
+# API 및 S3, Redshift 설정 가져오기
+def get_connections(conn_id):
+    conn = BaseHook.get_connection(conn_id)
+    return {
+        "host": conn.host,
+        "schema": conn.schema,
+        "login": conn.login,
+        "password": conn.password,
+        "port": conn.port,
+        "extra": conn.extra_dejson,
+    }
+
 def crawl_stock_data(**kwargs):
     # Selenium 드라이버 설정
     options = webdriver.ChromeOptions()
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    options.add_argument("headless")
+    #options.add_argument("headless")
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
     today = datetime.now().strftime('%Y.%m.%d')
@@ -33,19 +46,20 @@ def crawl_stock_data(**kwargs):
     
     text_list = []
     cols = ["date", "stockCode", "stockName", "investmentOpinion", "targetPrice", "currentPrice", "title", "text", "url"]
-
+    
     try : 
         driver.get(url)
         time.sleep(2)  # 페이지 로딩 대기
-
-        for i in range(30):
+        i = 0
+        while True:
+            i += 1
             time.sleep(2)
             search_page = driver.find_elements(By.CLASS_NAME, "ResearchList_item__I6Z7_")[i]
 
-            news_date = today
+            news_date = driver.find_elements(By.CLASS_NAME, 'ResearchList_description___nHPv')[1].text.strip(".")
             stock_name = search_page.text.split("\n")[0]
 
-            if today not in search_page.text:
+            if news_date not in search_page.text:
                 break
             else:
                 try:
@@ -78,7 +92,10 @@ def crawl_stock_data(**kwargs):
             
             text = driver.find_element(By.CLASS_NAME, 'ResearchContent_text_area__BsfMF').text.split('\n')[-1]
 
-            text_list.append([news_date, stock_code, stock_name, investment_opinion, target_price, current_price, title, text, news_url])
+            if text_list[-1] == [news_date, stock_code, stock_name, investment_opinion, target_price, current_price, title, text, news_url] :
+                break
+            else :
+                text_list.append([news_date, stock_code, stock_name, investment_opinion, target_price, current_price, title, text, news_url])
 
             driver.back()
             time.sleep(2)
@@ -105,7 +122,7 @@ def crawl_kospi_kosdaq_data(**kwargs):
     options = webdriver.ChromeOptions()
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    options.add_argument("headless")
+    #options.add_argument("headless")
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
     url_kospi = 'https://m.stock.naver.com/domestic/index/KOSPI/total'
@@ -163,8 +180,9 @@ def crawl_kospi_kosdaq_data(**kwargs):
 
 def upload_to_s3(file_path, bucket_name, object_key):
     # GitHub Secrets에서 AWS 자격 증명을 환경 변수로 설정
-    aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
-    aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+    aws_conn = get_connections("aws_conn")
+    aws_access_key = aws_conn.login #os.getenv('AWS_ACCESS_KEY_ID')
+    aws_secret_key = aws_conn.password #os.getenv('AWS_SECRET_ACCESS_KEY')
 
     # S3 클라이언트 생성
     s3_client = boto3.client(
@@ -178,6 +196,21 @@ def upload_to_s3(file_path, bucket_name, object_key):
         print(f"파일이 S3에 업로드되었습니다: s3://{bucket_name}/{object_key}")
     except Exception as e:
         print(f"S3 업로드 실패: {e}")
+
+def s3_upload_task_func(**kwargs):
+    # 크롤링 작업의 출력 파일 경로 가져오기
+    ti = kwargs['ti']
+    stock_file_path = ti.xcom_pull(task_ids='crawl_stock_data_task')
+    kospi_kosdaq_file_path = ti.xcom_pull(task_ids='crawl_kospi_kosdaq_data_task')
+
+    # S3 업로드 정보
+    bucket_name = 'team6-s3'
+    stock_object_key = 'raw_data/naverFinance/naverFinanceNews.csv'
+    kospi_kosdaq_object_key = 'raw_data/naverFinance/kospiKosdaqData.csv'
+
+    # 파일 업로드
+    upload_to_s3(stock_file_path, bucket_name, stock_object_key)
+    upload_to_s3(kospi_kosdaq_file_path, bucket_name, kospi_kosdaq_object_key)
 
 # Redshift 테이블 생성 함수
 def create_redshift_tables(**kwargs):
@@ -243,7 +276,7 @@ def upload_to_redshift(**kwargs):
     FROM '{s3_path}'
     ACCESS_KEY_ID '{access_key}'
     SECRET_ACCESS_KEY '{secret_key}'
-    FORMAT AS PARQUET;
+    CSV DELIMITER ',' IGNOREHEADER 1;
     """
     cursor.execute(copy_sql)
     conn.commit()
@@ -276,21 +309,6 @@ crawl_kospi_kosdaq_task = PythonOperator(
     provide_context=True,
     dag=dag,
 )
-
-def s3_upload_task_func(**kwargs):
-    # 크롤링 작업의 출력 파일 경로 가져오기
-    ti = kwargs['ti']
-    stock_file_path = ti.xcom_pull(task_ids='crawl_stock_data_task')
-    kospi_kosdaq_file_path = ti.xcom_pull(task_ids='crawl_kospi_kosdaq_data_task')
-
-    # S3 업로드 정보
-    bucket_name = 'team6-s3'
-    stock_object_key = 'raw_data/naverFinance/naverFinanceNews.csv'
-    kospi_kosdaq_object_key = 'raw_data/naverFinance/kospiKosdaqData.csv'
-
-    # 파일 업로드
-    upload_to_s3(stock_file_path, bucket_name, stock_object_key)
-    upload_to_s3(kospi_kosdaq_file_path, bucket_name, kospi_kosdaq_object_key)
 
 s3_upload_task = PythonOperator(
     task_id='upload_to_s3_task',
