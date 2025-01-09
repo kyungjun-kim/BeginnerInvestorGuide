@@ -36,10 +36,19 @@ def get_connections(conn_id):
 def crawl_stock_data(**kwargs):
     # Selenium 드라이버 설정
     options = webdriver.ChromeOptions()
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    #options.add_argument("headless")
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    options.add_argument('--headless')  # GUI 없는 환경에서 필수
+    options.add_argument('--no-sandbox')  # Docker 환경에서 권한 문제 방지
+    options.add_argument('--disable-dev-shm-usage')  # 메모리 부족 문제 방지
+    options.add_argument('--disable-gpu')  # GPU 비활성화
+    options.add_argument('--window-size=1920x1080')
+    try:
+        driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager(version="114.0.5735.90").install()),  # 명시적 버전 설정
+        options=options
+        )
+    except Exception as e:
+        raise Exception(f"ChromeDriver 초기화 실패: {e}")
+
 
     today = datetime.now().strftime('%Y.%m.%d')
     url = 'https://m.stock.naver.com/investment/research/company'
@@ -120,10 +129,18 @@ def crawl_stock_data(**kwargs):
 def crawl_kospi_kosdaq_data(**kwargs):
     # Selenium 드라이버 설정
     options = webdriver.ChromeOptions()
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    #options.add_argument("headless")
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    options.add_argument('--headless')  # GUI 없는 환경에서 필수
+    options.add_argument('--no-sandbox')  # Docker 환경에서 권한 문제 방지
+    options.add_argument('--disable-dev-shm-usage')  # 메모리 부족 문제 방지
+    options.add_argument('--disable-gpu')  # GPU 비활성화
+    options.add_argument('--window-size=1920x1080')
+    try:
+        driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager(version="114.0.5735.90").install()),  # 명시적 버전 설정
+        options=options
+        )
+    except Exception as e:
+        raise Exception(f"ChromeDriver 초기화 실패: {e}")
 
     url_kospi = 'https://m.stock.naver.com/domestic/index/KOSPI/total'
     url_kosdaq = 'https://m.stock.naver.com/domestic/index/KOSDAQ/total'
