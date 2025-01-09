@@ -8,7 +8,7 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-import time, boto3, os
+import time, boto3, os, logging
 import pandas as pd
 
 
@@ -37,27 +37,25 @@ def get_connections(conn_id):
 
 def crawl_stock_data(**kwargs):
     # Selenium 드라이버 설정
-    options = webdriver.ChromeOptions()
-    options.add_argument('--headless')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--disable-gpu')
-    options.add_argument('--window-size=1920x1080')
     try:
-        
-        # ChromeDriver 버전 확인 및 설치
-        CHROME_DRIVER_VERSION = os.getenv("CHROME_DRIVER_VERSION", "114.0.5735.90")
-        print("버전확인:" , CHROME_DRIVER_VERSION)
+        logging.info("Starting Selenium script...")
+        options = webdriver.ChromeOptions()
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--window-size=1920x1080')
+
         driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager(version=CHROME_DRIVER_VERSION).install()),
+            service=Service(ChromeDriverManager().install()),
             options=options
         )
-        # 웹 크롤링 로직 작성
         driver.get("https://example.com")
-        # 필요한 작업...
+        logging.info(f"Page title: {driver.title}")
         driver.quit()
     except Exception as e:
-        raise Exception(f"ChromeDriver 초기화 실패: {e}")
+        logging.error(f"Error occurred: {e}")
+        raise
 
 
     today = datetime.now().strftime('%Y.%m.%d')
@@ -138,21 +136,26 @@ def crawl_stock_data(**kwargs):
 
 def crawl_kospi_kosdaq_data(**kwargs):
     # Selenium 드라이버 설정
-    options = webdriver.ChromeOptions()
-    options.add_argument('--headless')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--disable-gpu')
-    options.add_argument('--window-size=1920x1080')
+    logging.info("Starting Selenium script...")
     try:
-        # ChromeDriverManager에서 버전을 지정하는 방식 수정
-        CHROME_DRIVER_VERSION = os.getenv("CHROME_DRIVER_VERSION", "114.0.5735.90")
+        logging.info("Starting Selenium script...")
+        options = webdriver.ChromeOptions()
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--window-size=1920x1080')
+
         driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()),
             options=options
         )
+        driver.get("https://example.com")
+        logging.info(f"Page title: {driver.title}")
+        driver.quit()
     except Exception as e:
-        raise Exception(f"ChromeDriver 초기화 실패: {e}")
+        logging.error(f"Error occurred: {e}")
+        raise
 
     url_kospi = 'https://m.stock.naver.com/domestic/index/KOSPI/total'
     url_kosdaq = 'https://m.stock.naver.com/domestic/index/KOSDAQ/total'
