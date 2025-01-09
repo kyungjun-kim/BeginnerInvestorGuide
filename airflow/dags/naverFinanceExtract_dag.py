@@ -44,12 +44,18 @@ def crawl_stock_data(**kwargs):
     options.add_argument('--disable-gpu')
     options.add_argument('--window-size=1920x1080')
     try:
-        # ChromeDriverManager에서 버전을 지정하는 방식 수정
+        
+        # ChromeDriver 버전 확인 및 설치
         CHROME_DRIVER_VERSION = os.getenv("CHROME_DRIVER_VERSION", "114.0.5735.90")
+        print("버전확인:" , CHROME_DRIVER_VERSION)
         driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
+            service=Service(ChromeDriverManager(version=CHROME_DRIVER_VERSION).install()),
             options=options
         )
+        # 웹 크롤링 로직 작성
+        driver.get("https://example.com")
+        # 필요한 작업...
+        driver.quit()
     except Exception as e:
         raise Exception(f"ChromeDriver 초기화 실패: {e}")
 
@@ -199,7 +205,6 @@ def crawl_kospi_kosdaq_data(**kwargs):
         driver.quit()
 
     return file_path_kospi_kosdaq
-
 
 def upload_to_s3(file_path, bucket_name, object_key):
     # GitHub Secrets에서 AWS 자격 증명을 환경 변수로 설정
