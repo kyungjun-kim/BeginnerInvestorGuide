@@ -38,16 +38,16 @@ def get_connections(conn_id):
 def crawl_stock_data(**kwargs):
     # Selenium 드라이버 설정
     options = webdriver.ChromeOptions()
-    options.add_argument('--headless')  # GUI 없는 환경에서 필수
-    options.add_argument('--no-sandbox')  # Docker 환경에서 권한 문제 방지
-    options.add_argument('--disable-dev-shm-usage')  # 메모리 부족 문제 방지
-    options.add_argument('--disable-gpu')  # GPU 비활성화
+    options.add_argument('--headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-gpu')
     options.add_argument('--window-size=1920x1080')
     try:
-        # 환경 변수에서 ChromeDriver 버전 가져오기
+        # ChromeDriverManager에서 버전을 지정하는 방식 수정
         CHROME_DRIVER_VERSION = os.getenv("CHROME_DRIVER_VERSION", "114.0.5735.90")
         driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager(version=CHROME_DRIVER_VERSION).install()),
+            service=Service(ChromeDriverManager().install()),
             options=options
         )
     except Exception as e:
@@ -133,17 +133,18 @@ def crawl_stock_data(**kwargs):
 def crawl_kospi_kosdaq_data(**kwargs):
     # Selenium 드라이버 설정
     options = webdriver.ChromeOptions()
-    options.add_argument('--headless')  # GUI 없는 환경에서 필수
-    options.add_argument('--no-sandbox')  # Docker 환경에서 권한 문제 방지
-    options.add_argument('--disable-dev-shm-usage')  # 메모리 부족 문제 방지
-    options.add_argument('--disable-gpu')  # GPU 비활성화
+    options.add_argument('--headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-gpu')
     options.add_argument('--window-size=1920x1080')
     try:
+        # ChromeDriverManager에서 버전을 지정하는 방식 수정
         CHROME_DRIVER_VERSION = os.getenv("CHROME_DRIVER_VERSION", "114.0.5735.90")
         driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager(version=CHROME_DRIVER_VERSION).install()),
-        options=options
-)
+            service=Service(ChromeDriverManager().install()),
+            options=options
+        )
     except Exception as e:
         raise Exception(f"ChromeDriver 초기화 실패: {e}")
 
