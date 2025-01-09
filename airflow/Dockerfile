@@ -48,6 +48,7 @@ RUN python3.9 -m pip install psycopg2-binary==2.9.9
 RUN python3.9 -m pip install Redis==4.6.0
 RUN python3.9 -m pip install Flask-Session==0.5.0
 RUN python3.9 -m pip install pandas==2.1.2
+RUN python3.9 -m pip install pyspark==3.5.0
 RUN python3.9 -m pip install requests==2.31.0
 RUN python3.9 -m pip install s3fs
 RUN python3.9 -m pip install boto3==1.28.64
@@ -73,3 +74,11 @@ RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /tmp/* \
     && ls -l /usr/bin/google-chrome \
     && /usr/bin/google-chrome --version
+
+#크롬 드라이버 버전
+ENV CHROME_DRIVER_VERSION=114.0.5735.90
+
+# ChromeDriver 설치
+RUN wget -O /usr/local/bin/chromedriver https://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip && \
+    unzip /usr/local/bin/chromedriver -d /usr/local/bin/ && \
+    chmod +x /usr/local/bin/chromedriver
