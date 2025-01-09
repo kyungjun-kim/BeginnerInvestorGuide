@@ -214,7 +214,7 @@ def upload_to_s3(**kwargs):
     ti = kwargs['ti']
     csv_path = ti.xcom_pull(task_ids='crawl_and_save_data', key='csv_path')
 
-    s3_hook = S3Hook(aws_conn_id='aws_default')
+    s3_hook = S3Hook(aws_conn_id='aws_conn')
     s3_hook.load_file(
         filename=csv_path,
         bucket_name='team6-s3',
