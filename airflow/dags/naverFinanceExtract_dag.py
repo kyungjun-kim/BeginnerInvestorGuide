@@ -138,10 +138,11 @@ def crawl_kospi_kosdaq_data(**kwargs):
     options.add_argument('--disable-gpu')  # GPU 비활성화
     options.add_argument('--window-size=1920x1080')
     try:
+        CHROME_DRIVER_VERSION = os.getenv("CHROME_DRIVER_VERSION", "114.0.5735.90")
         driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager(version="114.0.5735.90").install()),  # 명시적 버전 설정
+        service=Service(ChromeDriverManager(version=CHROME_DRIVER_VERSION).install()),
         options=options
-        )
+)
     except Exception as e:
         raise Exception(f"ChromeDriver 초기화 실패: {e}")
 
