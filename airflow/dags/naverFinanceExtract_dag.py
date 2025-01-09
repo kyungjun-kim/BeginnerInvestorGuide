@@ -43,7 +43,7 @@ def crawl_stock_data(**kwargs):
     options.add_argument('--window-size=1920x1080')
     try:
         driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager(version="114.0.5735.90").install()),  # 명시적 버전 설정
+        service=Service(ChromeDriverManager().install()),
         options=options
         )
     except Exception as e:
