@@ -27,6 +27,7 @@ default_args = {
 
 dag = DAG(
     'community_crawling_dag',
+    start_date=datetime(2025, 1, 1),
     default_args=default_args,
     description='주식 커뮤니티(Clien, FMKorea) 게시글 크롤링 DAG',
     schedule_interval='@daily',
