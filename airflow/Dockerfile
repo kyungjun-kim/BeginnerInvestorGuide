@@ -92,6 +92,10 @@ RUN apt-get update && apt-get install -y \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /tmp/*
 
 # Google Chrome 설치
+RUN apt-get update && apt-get install -y wget
+RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+RUN dpkg -i google-chrome-stable_current_amd64.deb || apt-get -fy install
+
 RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - && \
     sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list' && \
     apt-get update && \
@@ -108,4 +112,6 @@ ENV CHROME_DRIVER_VERSION=114.0.5735.90
 RUN wget -O /usr/local/bin/chromedriver "https://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip" && \
     unzip /usr/local/bin/chromedriver -d /usr/local/bin/ && \
     chmod +x /usr/local/bin/chromedriver
+
+
 
