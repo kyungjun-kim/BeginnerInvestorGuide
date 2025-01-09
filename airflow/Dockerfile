@@ -79,6 +79,7 @@ RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add
 ENV CHROME_DRIVER_VERSION=114.0.5735.90
 
 # ChromeDriver 설치
-RUN wget -O /usr/local/bin/chromedriver https://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip && \
+RUN wget -O /usr/local/bin/chromedriver "https://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip" && \
     unzip /usr/local/bin/chromedriver -d /usr/local/bin/ && \
     chmod +x /usr/local/bin/chromedriver
+
