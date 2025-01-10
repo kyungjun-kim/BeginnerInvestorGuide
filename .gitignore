@@ -1,0 +1,10 @@
+.env
+airflow/.env
+.idea/
+airflow/dags/tmp.py
+airflow/dags/stock_ranking_dag.py
+airflow/modules/
+test
+test/
+.python-version
+stock_data.xlsx
