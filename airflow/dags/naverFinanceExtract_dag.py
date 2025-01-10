@@ -108,8 +108,7 @@ def crawl_stock_data(**kwargs):
         if text_list :
             # 데이터프레임 생성 및 저장
             df = pd.DataFrame(text_list, columns=cols)
-            df.to_csv(file_path_news, index=False, encoding="utf-8-sig")
-            print("[Done] Create community crawling csv file.")
+            print("뉴스 데이터 생성 완료")
         else :
             print("데이터가 없어 파일을 생성하지 않았습니다.")
 
@@ -167,6 +166,12 @@ def crawl_kospi_kosdaq_data(**kwargs):
 
     finally:
         driver.quit()
+        if data :
+            # 데이터프레임 생성 및 저장
+            df = pd.DataFrame(data)
+            print("뉴스 데이터 생성 완료")
+        else :
+            print("데이터가 없어 파일을 생성하지 않았습니다.")
 
     return df
 
