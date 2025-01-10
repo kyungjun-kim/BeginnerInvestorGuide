@@ -1,7 +1,7 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.hooks.base import BaseHook
-# from airflow.providers.postgres.hooks.postgres import PostgresHook
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from datetime import datetime, timedelta
 import requests
@@ -36,14 +36,22 @@ def fetch_data(**kwargs):
     params = kwargs["params"]
 
     response = requests.get(endpoint, headers=headers, params=params)
-    data = response.json().get("output", [])
+    print(f"API 응답 상태 코드: {response.status_code}")
+    print(f"API 응답 데이터: {response.text}")
+
+    # 응답 데이터 구조 확인
+    try:
+        data = response.json().get("output", [])
+        print(f"가져온 데이터: {data}")
+    except Exception as e:
+        raise Exception(f"API 응답 파싱 실패: {e}")
 
     # 상위 10개 데이터만 가져오기
     top_10_data = data[:10]
     
     # XCom에 저장
     kwargs['ti'].xcom_push(key=f"{task_type}_data", value=top_10_data)
-
+    print(f"{task_type} 데이터 XCom에 저장 완료: {top_10_data}")
 
 
 # 데이터를 S3에 저장 (CSV 형식)
@@ -130,69 +138,69 @@ def upload_transformed_to_s3(**kwargs):
     kwargs['ti'].xcom_push(key=f"{task_type}_s3_path", value=f"s3://team6-s3/{bucket_path}/{file_name}")
 
 
-# # Redshift 테이블 생성
-# def create_redshift_table(**kwargs):
-#     table_name = kwargs["table_name"]
-#     redshift_conn = get_connections("redshift_conn")
+# Redshift 테이블 생성
+def create_redshift_table(**kwargs):
+    table_name = kwargs["table_name"]
+    redshift_conn = get_connections("redshift_conn")
 
-#     # Redshift 연결
-#     postgres_hook = PostgresHook(postgres_conn_id="redshift_conn")
-#     conn = postgres_hook.get_conn()
-#     cursor = conn.cursor()
+    # Redshift 연결
+    postgres_hook = PostgresHook(postgres_conn_id="redshift_conn")
+    conn = postgres_hook.get_conn()
+    cursor = conn.cursor()
 
-#     # 테이블 생성 SQL
-#     create_table_sql = f"""
-#     CREATE TABLE IF NOT EXISTS {table_name} (
-#         data_rank INT,
-#         mksc_shrn_iscd VARCHAR(10),
-#         hts_kor_isnm VARCHAR(40),
-#         stck_prpr INT,
-#         acml_vol INT,
-#         prdy_ctrt FLOAT
-#     );
-#     """
+    # 테이블 생성 SQL
+    create_table_sql = f"""
+    CREATE TABLE IF NOT EXISTS {table_name} (
+        data_rank INT,
+        mksc_shrn_iscd VARCHAR(10),
+        hts_kor_isnm VARCHAR(40),
+        stck_prpr INT,
+        acml_vol INT,
+        prdy_ctrt FLOAT
+    );
+    """
 
-#     cursor.execute(create_table_sql)
-#     conn.commit()
-#     cursor.close()
-#     conn.close()
+    cursor.execute(create_table_sql)
+    conn.commit()
+    cursor.close()
+    conn.close()
 
-#     print(f"Redshift 테이블 {table_name}이 성공적으로 생성되었습니다.")
+    print(f"Redshift 테이블 {table_name}이 성공적으로 생성되었습니다.")
 
 
 
-# # Redshift에 데이터 적재 (COPY 명령)
-# def upload_to_redshift(**kwargs):
-#     task_type = kwargs["task_type"]
-#     table_name = kwargs["table_name"]
-#     s3_path = kwargs['ti'].xcom_pull(key=f"{task_type}_s3_path", task_ids=f"upload_transformed_data_to_s3")
+# Redshift에 데이터 적재 (COPY 명령)
+def upload_to_redshift(**kwargs):
+    task_type = kwargs["task_type"]
+    table_name = kwargs["table_name"]
+    s3_path = kwargs['ti'].xcom_pull(key=f"{task_type}_s3_path", task_ids=f"upload_transformed_data_to_s3")
 
-#     if not s3_path:
-#         raise Exception(f"{task_type} 데이터 Redshift 업로드 실패: S3 경로가 없습니다.")
+    if not s3_path:
+        raise Exception(f"{task_type} 데이터 Redshift 업로드 실패: S3 경로가 없습니다.")
 
-#     # AWS Connection 사용
-#     aws_conn = get_connections("aws_conn")
-#     access_key = aws_conn.login  # AWS Access Key ID
-#     secret_key = aws_conn.password
+    # AWS Connection 사용
+    aws_conn = get_connections("aws_conn")
+    access_key = aws_conn.login  # AWS Access Key ID
+    secret_key = aws_conn.password
 
-#     postgres_hook = PostgresHook(postgres_conn_id="redshift_conn")
-#     conn = postgres_hook.get_conn()
-#     cursor = conn.cursor()
+    postgres_hook = PostgresHook(postgres_conn_id="redshift_conn")
+    conn = postgres_hook.get_conn()
+    cursor = conn.cursor()
 
-#     # COPY 명령 실행
-#     copy_sql = f"""
-#     COPY {table_name}
-#     FROM '{s3_path}'
-#     ACCESS_KEY_ID '{access_key}'
-#     SECRET_ACCESS_KEY '{secret_key}'
-#     FORMAT AS PARQUET;
-#     """
-#     cursor.execute(copy_sql)
-#     conn.commit()
-#     cursor.close()
-#     conn.close()
+    # COPY 명령 실행
+    copy_sql = f"""
+    COPY {table_name}
+    FROM '{s3_path}'
+    ACCESS_KEY_ID '{access_key}'
+    SECRET_ACCESS_KEY '{secret_key}'
+    FORMAT AS PARQUET;
+    """
+    cursor.execute(copy_sql)
+    conn.commit()
+    cursor.close()
+    conn.close()
 
-#     print(f"{task_type} 데이터를 Redshift 테이블 {table_name}에 적재 완료.")
+    print(f"{task_type} 데이터를 Redshift 테이블 {table_name}에 적재 완료.")
 
 # DAG 정의
 default_args = {
@@ -250,21 +258,20 @@ with DAG(
         },
     )
 
-#     create_table = PythonOperator(
-#     task_id="create_table",
-#     python_callable=create_redshift_table,
-#     op_kwargs={"table_name": "transformed_stock_volume"},
-# )
+    create_table = PythonOperator(
+    task_id="create_table",
+    python_callable=create_redshift_table,
+    op_kwargs={"table_name": "transformed_stock_volume"},
+)
 
-#     upload_to_redshift = PythonOperator(
-#         task_id="upload_to_redshift",
-#         python_callable=upload_to_redshift,
-#         op_kwargs={
-#             "task_type": "stock_volume_top10",
-#             "table_name": "transformed_stock_volume",
-#         },
-#     )
+    upload_to_redshift = PythonOperator(
+        task_id="upload_to_redshift",
+        python_callable=upload_to_redshift,
+        op_kwargs={
+            "task_type": "stock_volume_top10",
+            "table_name": "transformed_stock_volume",
+        },
+    )
 
     # 태스크 의존성 설정
-    fetch_volume_data >> upload_raw_data_to_s3 >> process_volume_data >> upload_transformed_data_to_s3 
-    # >> create_table >> upload_to_redshift
+    fetch_volume_data >> upload_raw_data_to_s3 >> process_volume_data >> upload_transformed_data_to_s3 >> create_table >> upload_to_redshift
