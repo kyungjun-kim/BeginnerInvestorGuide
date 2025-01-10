@@ -38,23 +38,18 @@ def get_connections(conn_id):
 def crawl_stock_data(**kwargs):
     # Selenium 드라이버 설정
     try:
-        logging.info("Starting Selenium script...")
         options = webdriver.ChromeOptions()
         options.add_argument('--headless')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--window-size=1920x1080')
-
         driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()),
             options=options
         )
         driver.get("https://example.com")
-        logging.info(f"Page title: {driver.title}")
         driver.quit()
     except Exception as e:
-        logging.error(f"Error occurred: {e}")
+        print(e)
         raise
 
 
@@ -136,26 +131,21 @@ def crawl_stock_data(**kwargs):
 
 def crawl_kospi_kosdaq_data(**kwargs):
     # Selenium 드라이버 설정
-    logging.info("Starting Selenium script...")
+    # Selenium 드라이버 설정
     try:
-        logging.info("Starting Selenium script...")
         options = webdriver.ChromeOptions()
         options.add_argument('--headless')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--window-size=1920x1080')
-
         driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()),
             options=options
         )
         driver.get("https://example.com")
-        logging.info(f"Page title: {driver.title}")
         driver.quit()
     except Exception as e:
-        logging.error(f"Error occurred: {e}")
-        raise
+        print(e)
+        raise 
 
     url_kospi = 'https://m.stock.naver.com/domestic/index/KOSPI/total'
     url_kosdaq = 'https://m.stock.naver.com/domestic/index/KOSDAQ/total'
