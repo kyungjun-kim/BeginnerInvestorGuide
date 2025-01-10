@@ -12,8 +12,6 @@ from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 import time, boto3, os, logging
 import pandas as pd
 
-
-
 # DAG 기본 설정
 default_args = {
     'owner': 'airflow',
@@ -104,10 +102,11 @@ def crawl_stock_data(**kwargs):
             
             text = driver.find_element(By.CLASS_NAME, 'ResearchContent_text_area__BsfMF').text.split('\n')[-1]
 
-            if text_list[-1] == [news_date, stock_code, stock_name, investment_opinion, target_price, current_price, title, text, news_url] :
+            tmp = [news_date, stock_code, stock_name, investment_opinion, target_price, current_price, title, text, news_url]
+            if len(text_list) > 0 and text_list[-1] == tmp :
                 break
             else :
-                text_list.append([news_date, stock_code, stock_name, investment_opinion, target_price, current_price, title, text, news_url])
+                text_list.append(tmp)
 
             driver.back()
             time.sleep(2)
@@ -134,7 +133,7 @@ def crawl_kospi_kosdaq_data(**kwargs):
     # Selenium 드라이버 설정
     driver = init_driver()
     print("드라이버 생성 완료")
-    
+
     url_kospi = 'https://m.stock.naver.com/domestic/index/KOSPI/total'
     url_kosdaq = 'https://m.stock.naver.com/domestic/index/KOSDAQ/total'
 
