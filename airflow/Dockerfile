@@ -48,6 +48,7 @@ RUN python3.9 -m pip install psycopg2-binary==2.9.9
 RUN python3.9 -m pip install Redis==4.6.0
 RUN python3.9 -m pip install Flask-Session==0.5.0
 RUN python3.9 -m pip install pandas==2.1.2
+RUN python3.9 -m pip install pyspark==3.5.0
 RUN python3.9 -m pip install requests==2.31.0
 RUN python3.9 -m pip install s3fs
 RUN python3.9 -m pip install boto3==1.28.64
@@ -65,11 +66,49 @@ RUN mkdir ${AIRFLOW_HOME}/plugins
 RUN mkdir ${AIRFLOW_HOME}/data
 
 # Google Chrome 설치
-RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - && \
-    sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list' && \
-    apt-get update && \
-    apt-get install -y google-chrome-stable \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /tmp/* \
-    && ls -l /usr/bin/google-chrome \
-    && /usr/bin/google-chrome --version
+RUN apt-get update && apt-get install -y \
+    google-chrome-stable \
+    libx11-xcb1 \
+    libxcb1 \
+    libxcb-glx0 \
+    libxcb-util1 \
+    libxrender1 \
+    libxrandr2 \
+    libxi6 \
+    libxtst6 \
+    libxcursor1 \
+    libxcomposite1 \
+    libasound2 \
+    libpangocairo-1.0-0 \
+    libgtk-3-0 \
+    fonts-liberation \
+    libnss3 \
+    libatk-bridge2.0-0 \
+    libxdamage1 \
+    libdrm2 \
+    libgbm1 \
+    libxcb-dri3-0 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /tmp/*
+
+# Google Chrome 설치
+RUN apt-get update && apt-get install -y \
+    wget \
+    libgconf-2-4 \
+    libnss3 \
+    libxss1 \
+    libappindicator1 \
+    libindicator7 \
+    fonts-liberation \
+    libappindicator3-1 \
+    xdg-utils \
+    unzip \
+    google-chrome-stable
+
+RUN wget -O /tmp/chromedriver.zip https://chromedriver.storage.googleapis.com/120.0.6099.224/chromedriver_linux64.zip && \
+    unzip /tmp/chromedriver.zip -d /usr/local/bin/ && \
+    chmod +x /usr/local/bin/chromedriver
+
+
+
+
