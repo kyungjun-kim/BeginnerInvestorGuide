@@ -40,8 +40,6 @@ def init_driver():
     options.add_argument('--headless')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    # service = Service(ChromeDriverManager().install())
-    # driver = webdriver.Chrome(service=service, options=options)
     driver = webdriver.Remote('remote_chromedriver:4444/wd/hub', options=options)
     driver.implicitly_wait(5)
     
@@ -194,7 +192,7 @@ def get_clien_posts(base_url):
         page += 1
     return posts
 
-# Process of crawling and Save data
+# 1. Process of crawling and Save data
 def crawl_and_save_data(**kwargs):
     ti = kwargs['ti']
     clien_url = "https://www.clien.net/service/board/cm_stock"
@@ -204,14 +202,13 @@ def crawl_and_save_data(**kwargs):
     fm_posts = get_fmkorea_posts(fm_url)
     
     crawling_df = pd.DataFrame(clien_posts + fm_posts)
-    csv_path = f"/tmp/community_crawling_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    csv_path = f"/tmp/community_crawling_{datetime.now()}.csv"
     crawling_df.to_csv(csv_path, index=False, encoding='utf-8-sig')
     
     print("[Done] Create community crawling csv file.")
     ti.xcom_push(key='csv_path', value=csv_path)
     
-    
-# Upload to S3
+# 3. Upload to S3
 def upload_to_s3(**kwargs):
     ti = kwargs['ti']
     csv_path = ti.xcom_pull(task_ids='crawl_and_save_data', key='csv_path')

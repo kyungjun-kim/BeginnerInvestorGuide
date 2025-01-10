@@ -1,4 +1,4 @@
-name: Sync Airflow DAGs
+name: Sync Airflow and S3
 
 on:
   push:
@@ -18,7 +18,20 @@ jobs:
         steps:
             - name: Checkout repository
               uses: actions/checkout@v3
-    
+
+            # 1. Sync Github and S3
+            - name: Show AWS version
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                aws-region: ap-northeast-2
+
+            - name: Sync S3 bucket and Github
+              run: |
+                aws s3 sync ./data s3://team6-s3/data --delete
+            
+            # 2. Sync Github and Airflow DAGs
             - name: Set up SSH
               uses: webfactory/ssh-agent@v0.5.3
               with:
