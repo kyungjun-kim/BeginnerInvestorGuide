@@ -6,3 +6,4 @@ airflow/dags/stock_ranking_dag.py
 airflow/modules/
 test
 test/
+stock_data.xlsx
