@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
@@ -38,13 +39,16 @@ def get_connections(conn_id):
 def crawl_stock_data(**kwargs):
     # Selenium 드라이버 설정
     try:
-        options = webdriver.ChromeOptions()
+        options = Options()
         options.add_argument('--headless')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
-        #driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()),options=options)
-        driver = webdriver.Chrome(service=Service('/usr/local/bin/chromedriver'), options=options)  # ChromeDriver 경로
+        # service = Service(ChromeDriverManager().install())
+        # driver = webdriver.Chrome(service=service, options=options)
+        print("드라이브 실행전")
+        driver = webdriver.Remote('remote_chromedriver:4444/wd/hub', options=options)  # ChromeDriver 경로
         driver.get("https://example.com")
+        print(driver.title)
         driver.quit()
     except Exception as e:
         print(e)
@@ -131,14 +135,13 @@ def crawl_kospi_kosdaq_data(**kwargs):
     # Selenium 드라이버 설정
     # Selenium 드라이버 설정
     try:
-        options = webdriver.ChromeOptions()
+        options = Options()
         options.add_argument('--headless')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
-        #driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()),options=options)
-        driver = webdriver.Chrome(service=Service('/usr/local/bin/chromedriver'), options=options)  # ChromeDriver 경로
-        driver.get("https://example.com")
-        driver.quit()
+        # service = Service(ChromeDriverManager().install())
+        # driver = webdriver.Chrome(service=service, options=options)
+        driver = webdriver.Remote('remote_chromedriver:4444/wd/hub', options=options)
     except Exception as e:
         print(e)
         raise 
