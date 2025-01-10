@@ -8,8 +8,6 @@ on:
 env:
   MASTER_DAGS_DIR: /home/ec2-user/airflow_master/dags
   WORKER_DAGS_DIR: /home/ec2-user/airflow_worker/dags
-  MASTER_MODULES_DIR: /home/ec2-user/airflow_master/modules
-  WORKER_MODULES_DIR: /home/ec2-user/airflow_worker/modules
   WORKER_IPS: ${{ secrets.WORKER1_PRIVATE_IP }} ${{ secrets.WORKER2_PRIVATE_IP }} ${{ secrets.WORKER3_PRIVATE_IP }}
 
 jobs:
