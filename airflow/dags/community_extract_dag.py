@@ -53,7 +53,7 @@ def get_fmkorea_posts(base_url):
     
     today = datetime.now()
     yesterday = today - timedelta(days=1)
-    date_start = (today - timedelta(days=1)).replace(hour=0, minute=0, second=0)
+    date_start = (today - timedelta(days=1)).replace(hour=23, minute=0, second=0) #1시간 동안 올라온 게시물 (test)
     date_end = (today - timedelta(days=1)).replace(hour=23, minute=59, second=59)
     
     page = 1
