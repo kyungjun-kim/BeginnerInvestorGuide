@@ -45,8 +45,10 @@ def crawl_stock_data(**kwargs):
         options.add_argument('--disable-dev-shm-usage')
         # service = Service(ChromeDriverManager().install())
         # driver = webdriver.Chrome(service=service, options=options)
+        print("드라이브 실행전")
         driver = webdriver.Remote('remote_chromedriver:4444/wd/hub', options=options)  # ChromeDriver 경로
         driver.get("https://example.com")
+        print(driver.title)
         driver.quit()
     except Exception as e:
         print(e)
