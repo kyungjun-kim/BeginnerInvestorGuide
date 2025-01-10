@@ -36,24 +36,22 @@ def get_connections(conn_id):
         "extra": conn.extra_dejson,
     }
 
+def init_driver():
+    options = Options()
+    options.add_argument('--headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    # service = Service(ChromeDriverManager().install())
+    # driver = webdriver.Chrome(service=service, options=options)
+    driver = webdriver.Remote('remote_chromedriver:4444/wd/hub', options=options)
+    driver.implicitly_wait(5)
+    
+    return driver
+
 def crawl_stock_data(**kwargs):
     # Selenium 드라이버 설정
-    try:
-        options = Options()
-        options.add_argument('--headless')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        # service = Service(ChromeDriverManager().install())
-        # driver = webdriver.Chrome(service=service, options=options)
-        print("드라이브 실행전")
-        driver = webdriver.Remote('remote_chromedriver:4444/wd/hub', options=options)  # ChromeDriver 경로
-        driver.get("https://example.com")
-        print(driver.title)
-        driver.quit()
-    except Exception as e:
-        print(e)
-        raise
-
+    driver = init_driver()
+    print("드라이버 생성 완료")
 
     today = datetime.now().strftime('%Y.%m.%d')
     url = 'https://m.stock.naver.com/investment/research/company'
@@ -134,18 +132,9 @@ def crawl_stock_data(**kwargs):
 def crawl_kospi_kosdaq_data(**kwargs):
     # Selenium 드라이버 설정
     # Selenium 드라이버 설정
-    try:
-        options = Options()
-        options.add_argument('--headless')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        # service = Service(ChromeDriverManager().install())
-        # driver = webdriver.Chrome(service=service, options=options)
-        driver = webdriver.Remote('remote_chromedriver:4444/wd/hub', options=options)
-    except Exception as e:
-        print(e)
-        raise 
-
+    driver = init_driver()
+    print("드라이버 생성 완료")
+    
     url_kospi = 'https://m.stock.naver.com/domestic/index/KOSPI/total'
     url_kosdaq = 'https://m.stock.naver.com/domestic/index/KOSDAQ/total'
 
