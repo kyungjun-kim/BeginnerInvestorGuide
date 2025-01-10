@@ -22,18 +22,6 @@ default_args = {
     'retry_delay': timedelta(minutes=5),
 }
 
-# API 및 S3, Redshift 설정 가져오기
-def get_connections(conn_id):
-    conn = BaseHook.get_connection(conn_id)
-    return {
-        "host": conn.host,
-        "schema": conn.schema,
-        "login": conn.login,
-        "password": conn.password,
-        "port": conn.port,
-        "extra": conn.extra_dejson,
-    }
-
 def init_driver():
     options = Options()
     options.add_argument('--headless')
@@ -120,13 +108,12 @@ def crawl_stock_data(**kwargs):
         if text_list :
             # 데이터프레임 생성 및 저장
             df = pd.DataFrame(text_list, columns=cols)
-            file_path_news = 'naverNews.csv'
-            df.to_csv(file_path_news, index=False)
-            print("데이터가  저장되었습니다.")
+            df.to_csv(file_path_news, index=False, encoding="utf-8-sig")
+            print("[Done] Create community crawling csv file.")
         else :
             print("데이터가 없어 파일을 생성하지 않았습니다.")
 
-    return file_path_news
+    return df
 
 def crawl_kospi_kosdaq_data(**kwargs):
     # Selenium 드라이버 설정
@@ -174,9 +161,6 @@ def crawl_kospi_kosdaq_data(**kwargs):
 
         # DataFrame 생성
         df = pd.DataFrame(data)
-        file_path_kospi_kosdaq = 'kospi_kosdaq_data.csv'
-        df.to_csv(file_path_kospi_kosdaq, index=False, encoding='utf-8-sig')
-        print(f"CSV 파일 {file_path_kospi_kosdaq} 생성 완료.")
 
     except Exception as e:
         print("에러 발생:", e)
@@ -184,118 +168,111 @@ def crawl_kospi_kosdaq_data(**kwargs):
     finally:
         driver.quit()
 
-    return file_path_kospi_kosdaq
+    return df
 
-def upload_to_s3(file_path, bucket_name, object_key):
-    # GitHub Secrets에서 AWS 자격 증명을 환경 변수로 설정
-    aws_conn = get_connections("aws_conn")
-    aws_access_key = aws_conn.login #os.getenv('AWS_ACCESS_KEY_ID')
-    aws_secret_key = aws_conn.password #os.getenv('AWS_SECRET_ACCESS_KEY')
+def save_load_data(**kwargs) :
+    ti = kwargs['ti']
+    data_news = crawl_stock_data()
+    data_kos  = crawl_kospi_kosdaq_data()
 
-    # S3 클라이언트 생성
-    s3_client = boto3.client(
-        's3',
-        aws_access_key_id= "${{ secrets.AWS_ACCESS_KEY_ID}}",
-        aws_secret_access_key= "${{ secrets.AWS_SECRET_ACCESS_KEY}}"
+    # 뉴스 DF
+    path_news = f"/tmp/naverNews_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    data_news.to_csv(path_news, index=False, encoding="utf-8-sig")
+    print(f"뉴스 CSV 파일 생성 완료.")
+    ti.xcom_push(key='path_news', value=path_news)
+
+    # 코스피코스닥 DF
+    path_kos = f"/tmp/kospi_kosdaq_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    data_kos.to_csv(path_kos, index=False, encoding='utf-8-sig')
+    print(f"코스피코스닥 CSV 파일 생성 완료.")
+    ti.xcom_push(key='path_kos', value=path_kos)
+
+    path_news = ti.xcom_pull(task_ids='save_news_data', key='path_news')
+    path_kos = ti.xcom_pull(task_ids='save_kos_data', key='path_kos')
+
+    s3_hook = S3Hook(aws_conn_id='aws_conn')
+    s3_hook.load_file(
+        filename=ti.xcom_pull(task_ids='save_news_data', key='path_news'),
+        bucket_name='team6-s3',
+        replace=True,
+        key=f"raw_data/{os.path.basename(path_news)}"
+    )
+    s3_hook.load_file(
+        filename=ti.xcom_pull(task_ids='save_kos_data', key='path_kos'),
+        bucket_name='team6-s3',
+        replace=True,
+        key=f"raw_data/{os.path.basename(path_kos)}"
     )
 
-    try:
-        s3_client.upload_file(file_path, bucket_name, object_key)
-        print(f"파일이 S3에 업로드되었습니다: s3://{bucket_name}/{object_key}")
-    except Exception as e:
-        print(f"S3 업로드 실패: {e}")
-
-def s3_upload_task_func(**kwargs):
-    # 크롤링 작업의 출력 파일 경로 가져오기
-    ti = kwargs['ti']
-    stock_file_path = ti.xcom_pull(task_ids='crawl_stock_data_task')
-    kospi_kosdaq_file_path = ti.xcom_pull(task_ids='crawl_kospi_kosdaq_data_task')
-
-    # S3 업로드 정보
-    bucket_name = 'team6-s3'
-    stock_object_key = 'raw_data/naverFinance/naverFinanceNews.csv'
-    kospi_kosdaq_object_key = 'raw_data/naverFinance/kospiKosdaqData.csv'
-
-    # 파일 업로드
-    upload_to_s3(stock_file_path, bucket_name, stock_object_key)
-    upload_to_s3(kospi_kosdaq_file_path, bucket_name, kospi_kosdaq_object_key)
-
 # Redshift 테이블 생성 함수
-def create_redshift_tables(**kwargs):
+def create_and_load_redshift_tables(**kwargs):
     # Redshift 연결 설정
     postgres_hook = PostgresHook(postgres_conn_id="redshift_conn")
     conn = postgres_hook.get_conn()
     cursor = conn.cursor()
 
-    # 테이블 생성 SQL (naverNews 테이블)
-    create_naver_news_table_sql = """
-    CREATE TABLE IF NOT EXISTS naverNews (
-        date DATE,
-        stockCode INT,
-        stockName VARCHAR(40),
-        investmentOpinion VARCHAR(20),
-        targetPrice INT,
-        currentPrice INT,
-        title VARCHAR(255),
-        text VARCHAR(MAX),
-        url VARCHAR(255)
-    );
-    """
-
-    # 테이블 생성 SQL (kospiKosdaqData 테이블)
-    create_kospi_kosdaq_table_sql = """
-    CREATE TABLE IF NOT EXISTS kospiKosdaqData (
-        indexName VARCHAR(20),
-        value VARCHAR(40)
-    );
-    """
+    # 테이블 생성 SQL 정의
+    create_table_sqls = [
+        """
+        CREATE TABLE IF NOT EXISTS naverNews (
+            date DATE,
+            stockCode INT,
+            stockName VARCHAR(40),
+            investmentOpinion VARCHAR(20),
+            targetPrice INT,
+            currentPrice INT,
+            title VARCHAR(255),
+            text VARCHAR(MAX),
+            url VARCHAR(255)
+        );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS kospiKosdaqData (
+            indexName VARCHAR(20),
+            value VARCHAR(40)
+        );
+        """
+    ]
 
     # 테이블 생성 실행
-    cursor.execute(create_naver_news_table_sql)
-    cursor.execute(create_kospi_kosdaq_table_sql)
+    for sql in create_table_sqls:
+        cursor.execute(sql)
+
     conn.commit()
-    cursor.close()
-    conn.close()
+    print("Redshift 테이블 생성 완료.")
 
-    print("Redshift 테이블 naverNews 및 kospiKosdaqData가 성공적으로 생성되었습니다.")
-
-# Redshift에 데이터 적재 함수
-def upload_to_redshift(**kwargs):
-    task_type = kwargs["task_type"]
-    table_name = kwargs["table_name"]
-    s3_path = kwargs['ti'].xcom_pull(key=f"{task_type}_s3_path", task_ids=f"upload_to_s3_task")
-
-    if not s3_path:
-        raise Exception(f"{task_type} 데이터 Redshift 업로드 실패: S3 경로가 없습니다.")
-
-    # AWS 연결 정보 가져오기
+    # 데이터 적재
+    ti = kwargs['ti']
+    s3_paths = {
+        'naverNews': ti.xcom_pull(task_ids='upload_to_s3', key='path_news'),
+        'kospiKosdaqData': ti.xcom_pull(task_ids='upload_to_s3', key='path_kos')
+    }
     aws_conn = BaseHook.get_connection("aws_conn")
-    access_key = aws_conn.login  # AWS Access Key ID
+    access_key = aws_conn.login
     secret_key = aws_conn.password
 
-    # Redshift 연결 설정
-    postgres_hook = PostgresHook(postgres_conn_id="redshift_conn")
-    conn = postgres_hook.get_conn()
-    cursor = conn.cursor()
+    for table_name, s3_path in s3_paths.items():
+        if not s3_path:
+            raise Exception(f"{table_name} 데이터 Redshift 업로드 실패: S3 경로가 없습니다.")
 
-    # COPY 명령 실행 (S3 데이터를 Redshift로 로드)
-    copy_sql = f"""
-    COPY {table_name}
-    FROM '{s3_path}'
-    ACCESS_KEY_ID '{access_key}'
-    SECRET_ACCESS_KEY '{secret_key}'
-    CSV DELIMITER ',' IGNOREHEADER 1;
-    """
-    cursor.execute(copy_sql)
+        copy_sql = f"""
+        COPY {table_name}
+        FROM '{s3_path}'
+        ACCESS_KEY_ID '{access_key}'
+        SECRET_ACCESS_KEY '{secret_key}'
+        CSV DELIMITER ',' IGNOREHEADER 1;
+        """
+        cursor.execute(copy_sql)
+
     conn.commit()
     cursor.close()
     conn.close()
 
-    print(f"{task_type} 데이터를 Redshift 테이블 {table_name}에 적재 완료.")
+    print("Redshift 데이터 적재 완료.")
 
 # DAG 정의
 dag = DAG(
-    'crawl_and_upload_stock_data_dag',
+    'crawl_and_upload_Naver_data_dag',
     default_args=default_args,
     description='DAG for crawling stock data and uploading to Redshift',
     schedule_interval=timedelta(days=1),
@@ -303,50 +280,34 @@ dag = DAG(
     catchup=False,
 )
 
-# PythonOperator로 크롤링 작업 실행
+# Task 정의
 crawl_stock_task = PythonOperator(
-    task_id='crawl_stock_data_task',
+    task_id='crawl_stock_data',
     python_callable=crawl_stock_data,
     provide_context=True,
-    dag=dag,
+    dag=dag
 )
 
 crawl_kospi_kosdaq_task = PythonOperator(
-    task_id='crawl_kospi_kosdaq_data_task',
+    task_id='crawl_kospi_kosdaq_data',
     python_callable=crawl_kospi_kosdaq_data,
     provide_context=True,
-    dag=dag,
+    dag=dag
 )
 
-s3_upload_task = PythonOperator(
-    task_id='upload_to_s3_task',
-    python_callable=s3_upload_task_func,
+upload_to_s3_task = PythonOperator(
+    task_id='upload_to_s3',
+    python_callable=save_load_data,  # 동일 함수 재사용
     provide_context=True,
-    dag=dag,
+    dag=dag
 )
 
-create_redshift_tables_task = PythonOperator(
-    task_id='create_redshift_tables_task',
-    python_callable=create_redshift_tables,
+create_and_load_redshift_task = PythonOperator(
+    task_id='create_and_load_redshift_tables',
+    python_callable=create_and_load_redshift_tables,
     provide_context=True,
-    dag=dag,
+    dag=dag
 )
 
-upload_naver_news_to_redshift_task = PythonOperator(
-    task_id='upload_naver_news_to_redshift_task',
-    python_callable=upload_to_redshift,
-    op_kwargs={'task_type': 'stock', 'table_name': 'naverNews'},
-    provide_context=True,
-    dag=dag,
-)
-
-upload_kospi_kosdaq_to_redshift_task = PythonOperator(
-    task_id='upload_kospi_kosdaq_to_redshift_task',
-    python_callable=upload_to_redshift,
-    op_kwargs={'task_type': 'kospi_kosdaq', 'table_name': 'kospiKosdaqData'},
-    provide_context=True,
-    dag=dag,
-)
-
-# Task 순서 설정
-crawl_stock_task >> crawl_kospi_kosdaq_task >> s3_upload_task >> create_redshift_tables_task >> [upload_naver_news_to_redshift_task, upload_kospi_kosdaq_to_redshift_task]
+# Task 순서 정의
+crawl_stock_task >> crawl_kospi_kosdaq_task  >> upload_to_s3_task >> create_and_load_redshift_task
