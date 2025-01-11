@@ -181,13 +181,13 @@ def save_load_data(**kwargs) :
     data_kos  = crawl_kospi_kosdaq_data()
 
     # 뉴스 DF
-    path_news = f"/tmp/naverNews_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    path_news = f"naverNews_{datetime.now().strftime('%Y%m%d')}.csv"
     data_news.to_csv(path_news, index=False, encoding="utf-8-sig")
     print(f"뉴스 CSV 파일 생성 완료.")
     ti.xcom_push(key='path_news', value=path_news)
 
     # 코스피코스닥 DF
-    path_kos = f"/tmp/kospi_kosdaq_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    path_kos = f"kospi_kosdaq_data_{datetime.now().strftime('%Y%m%d')}.csv"
     data_kos.to_csv(path_kos, index=False, encoding='utf-8-sig')
     print(f"코스피코스닥 CSV 파일 생성 완료.")
     ti.xcom_push(key='path_kos', value=path_kos)
@@ -227,7 +227,7 @@ def create_and_load_redshift_tables(**kwargs):
             targetPrice INT,
             currentPrice INT,
             title VARCHAR(255),
-            text VARCHAR(MAX),
+            text VARCHAR(65535),
             url VARCHAR(255)
         );
         """,
