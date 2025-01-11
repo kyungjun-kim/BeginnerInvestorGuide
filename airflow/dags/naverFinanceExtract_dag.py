@@ -247,12 +247,12 @@ def create_and_load_redshift_tables(**kwargs):
     print("Redshift 테이블 생성 완료.")
 
     # 데이터 적재
-    #ti = kwargs['ti']
+    ti = kwargs['ti']
     s3_paths = {
         #'naverNews': ti.xcom_pull(task_ids='upload_to_s3', key='path_news'),
         #'kospiKosdaqData': ti.xcom_pull(task_ids='upload_to_s3', key='path_kos')
-        'naverNews': f"s3://team6-s3/raw_data/naverNews_{datetime.now().strftime('%Y%m%d')}.csv",
-        'kospiKosdaqData': f"s3://team6-s3/raw_data/kospi_kosdaq_data_{datetime.now().strftime('%Y%m%d')}.csv"
+        'naverNews': f"s3://team6-s3/raw_data/{ti.xcom_pull(task_ids='upload_to_s3', key='path_news')}",
+        'kospiKosdaqData': f"s3://team6-s3/raw_data/{ti.xcom_pull(task_ids='upload_to_s3', key='path_kos')}"
     }
     aws_conn = BaseHook.get_connection("aws_conn")
     access_key = aws_conn.login
@@ -270,6 +270,7 @@ def create_and_load_redshift_tables(**kwargs):
         SECRET_ACCESS_KEY '{secret_key}'
         CSV DELIMITER ',' IGNOREHEADER 1;
         """
+        
         try:
             cursor.execute(copy_sql)
         except Exception as e:
