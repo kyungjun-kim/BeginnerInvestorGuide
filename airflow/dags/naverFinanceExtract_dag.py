@@ -247,10 +247,12 @@ def create_and_load_redshift_tables(**kwargs):
     print("Redshift 테이블 생성 완료.")
 
     # 데이터 적재
-    ti = kwargs['ti']
+    #ti = kwargs['ti']
     s3_paths = {
-        'naverNews': ti.xcom_pull(task_ids='upload_to_s3', key='path_news'),
-        'kospiKosdaqData': ti.xcom_pull(task_ids='upload_to_s3', key='path_kos')
+        #'naverNews': ti.xcom_pull(task_ids='upload_to_s3', key='path_news'),
+        #'kospiKosdaqData': ti.xcom_pull(task_ids='upload_to_s3', key='path_kos')
+        'naverNews': f"s3://team6-s3/raw_data/naverNews_{datetime.now().strftime('%Y%m%d')}.csv",
+        'kospiKosdaqData': f"s3://team6-s3/raw_data/kospi_kosdaq_data_{datetime.now().strftime('%Y%m%d')}.csv"
     }
     aws_conn = BaseHook.get_connection("aws_conn")
     access_key = aws_conn.login
@@ -260,6 +262,7 @@ def create_and_load_redshift_tables(**kwargs):
         if not s3_path:
             raise Exception(f"{table_name} 데이터 Redshift 업로드 실패: S3 경로가 없습니다.")
 
+        # COPY 명령 SQL
         copy_sql = f"""
         COPY {table_name}
         FROM '{s3_path}'
@@ -267,7 +270,12 @@ def create_and_load_redshift_tables(**kwargs):
         SECRET_ACCESS_KEY '{secret_key}'
         CSV DELIMITER ',' IGNOREHEADER 1;
         """
-        cursor.execute(copy_sql)
+        try:
+            cursor.execute(copy_sql)
+        except Exception as e:
+            print(f"{table_name} 데이터 Redshift 업로드 중 에러 발생: {e}")
+            conn.rollback()
+            raise
 
     conn.commit()
     cursor.close()
