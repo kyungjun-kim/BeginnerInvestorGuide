@@ -46,9 +46,17 @@ def fetch_data(**kwargs):
     except Exception as e:
         raise Exception(f"API 응답 파싱 실패: {e}")
 
+    # 필요한 컬럼만 필터링
+    columns = kwargs["columns"]
+    filtered_data = [
+        {col: item.get(col, None) for col in columns} for item in data
+    ]
+
+    print(f"필터링된 데이터: {filtered_data}")
+
     # 상위 10개 데이터만 가져오기
-    top_10_data = data[:10]
-    
+    top_10_data = filtered_data[:10]
+
     # CSV 파일로 저장
     file_path = f"/tmp/raw_{task_type}_data_{datetime.now().strftime('%y%m%d')}.csv"
     pd.DataFrame(top_10_data).to_csv(file_path, index=False, encoding='utf-8-sig')
@@ -57,7 +65,7 @@ def fetch_data(**kwargs):
     kwargs['ti'].xcom_push(key=f"{task_type}_csv_path", value=file_path)
     print(f"{task_type} 데이터가 CSV 파일로 저장되었습니다: {file_path}")
 
-# 데이터를 S3에 저장 (CSV 형식)
+# 데이터를 S3에 저장 (CSV 파일 업로드)
 def upload_raw_to_s3(**kwargs):
     task_type = kwargs["task_type"]
     bucket_path = kwargs["bucket_path"]
@@ -77,7 +85,6 @@ def upload_raw_to_s3(**kwargs):
     )
     print(f"{task_type} 데이터를 S3의 {bucket_path}/{os.path.basename(csv_path)}에 저장 완료.")
 
-
 # 데이터를 처리하는 함수
 def process_data(**kwargs):
     task_type = kwargs["task_type"]
@@ -87,12 +94,10 @@ def process_data(**kwargs):
     csv_path = kwargs['ti'].xcom_pull(key=f"{task_type}_csv_path", task_ids=f"fetch_{task_type}_data")
     if not csv_path or not os.path.exists(csv_path):
         raise FileNotFoundError(f"CSV 파일 경로를 찾을 수 없습니다: {csv_path}")
-    
+
     # 데이터 로드 및 처리
     df = pd.read_csv(csv_path)
-    df = df[columns]
 
-    # 데이터 변환 작업 수행
     for col in ["순위", "현재가", "거래량"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col].str.replace(',', ''), errors='coerce').fillna(0).astype(int)
@@ -106,8 +111,7 @@ def process_data(**kwargs):
     kwargs['ti'].xcom_push(key=f"{task_type}_processed_path", value=processed_path)
     print(f"{task_type} 처리된 데이터가 저장되었습니다: {processed_path}")
 
-
-# S3에 데이터를 저장 (Parquet 형식)
+# 처리된 데이터를 S3에 업로드 (Parquet 파일 업로드)
 def upload_transformed_to_s3(**kwargs):
     task_type = kwargs["task_type"]
     bucket_path = kwargs["bucket_path"]
@@ -127,10 +131,10 @@ def upload_transformed_to_s3(**kwargs):
     )
     print(f"{task_type} 처리된 데이터를 S3의 {bucket_path}/{os.path.basename(processed_path)}에 저장 완료.")
 
-
-# Redshift 테이블 생성
+# Redshift 테이블 생성 및 데이터 적재 함수
 def create_redshift_table(**kwargs):
     table_name = kwargs["table_name"]
+    columns_sql = kwargs["columns_sql"]
     redshift_conn = get_connections("redshift_conn")
 
     # Redshift 연결
@@ -141,12 +145,7 @@ def create_redshift_table(**kwargs):
     # 테이블 생성 SQL
     create_table_sql = f"""
     CREATE TABLE IF NOT EXISTS {table_name} (
-        data_rank INT,
-        mksc_shrn_iscd VARCHAR(10),
-        hts_kor_isnm VARCHAR(40),
-        stck_prpr INT,
-        acml_vol INT,
-        prdy_ctrt FLOAT
+        {columns_sql}
     );
     """
 
@@ -156,8 +155,6 @@ def create_redshift_table(**kwargs):
     conn.close()
 
     print(f"Redshift 테이블 {table_name}이 성공적으로 생성되었습니다.")
-
-
 
 # Redshift에 데이터 적재 (COPY 명령)
 def upload_to_redshift(**kwargs):
@@ -180,7 +177,7 @@ def upload_to_redshift(**kwargs):
     # COPY 명령 실행
     copy_sql = f"""
     COPY {table_name}
-    FROM '{s3_path}'
+    FROM 's3://team6-s3/{processed_path.split('/')[-1]}'
     ACCESS_KEY_ID '{access_key}'
     SECRET_ACCESS_KEY '{secret_key}'
     FORMAT AS PARQUET;
@@ -202,64 +199,89 @@ default_args = {
 }
 
 with DAG(
-    dag_id="stock_ranking_data_pipeline",
+    dag_id="stock_ranking_data_dag",
     default_args=default_args,
     schedule_interval="@daily",
     catchup=False,
 ) as dag:
 
-    fetch_volume_data = PythonOperator(
-        task_id="fetch_volume_data",
-        python_callable=fetch_data,
-        op_kwargs={
+    endpoints = [
+        {
             "task_type": "stock_volume_top10",
             "endpoint": "uapi/domestic-stock/v1/quotations/volume-rank",
             "tr_id": "FHPST01710000",
             "params": {"FID_COND_MRKT_DIV_CODE": "J"},
-        },
-    )
-
-    upload_raw_data_to_s3 = PythonOperator(
-        task_id="upload_raw_data_to_s3",
-        python_callable=upload_raw_to_s3,
-        op_kwargs={
-            "task_type": "stock_volume_top10",
-            "bucket_path": "raw_data",
-        },
-    ) 
-
-    process_volume_data = PythonOperator(
-        task_id="process_volume_data",
-        python_callable=process_data,
-        op_kwargs={
-            "task_type": "stock_volume_top10",
             "columns": ["data_rank", "mksc_shrn_iscd", "hts_kor_isnm", "stck_prpr", "acml_vol", "prdy_ctrt"],
+            "columns_sql": "data_rank INT, mksc_shrn_iscd VARCHAR(10), hts_kor_isnm VARCHAR(40), stck_prpr INT, acml_vol BIGINT, prdy_ctrt FLOAT"
         },
-    )
-
-    upload_transformed_data_to_s3 = PythonOperator(
-        task_id="upload_transformed_data_to_s3",
-        python_callable=upload_transformed_to_s3,
-        op_kwargs={
-            "task_type": "stock_volume_top10",
-            "bucket_path": "transformed_data",
+        {
+            "task_type": "market_cap_top10",
+            "endpoint": "uapi/domestic-stock/v1/quotations/market-cap-rank",
+            "tr_id": "FHPST01720000",
+            "params": {"FID_COND_MRKT_DIV_CODE": "J"},
+            "columns": ["data_rank", "mksc_shrn_iscd", "hts_kor_isnm", "stck_prpr", "stck_avls", "mrkt_whol_avls_rlim"],
+            "columns_sql": "data_rank INT, mksc_shrn_iscd VARCHAR(10), hts_kor_isnm VARCHAR(40), stck_prpr INT, stck_avls BIGINT, mrkt_whol_avls_rlim FLOAT"
         },
-    )
+        {
+            "task_type": "price_change_top10",
+            "endpoint": "uapi/domestic-stock/v1/quotations/price-change",
+            "tr_id": "FHPST01730000",
+            "params": {"FID_COND_MRKT_DIV_CODE": "J"},
+            "columns": ["data_rank", "stck_shrn_iscd", "hts_kor_isnm", "stck_prpr", "prdy_ctrt", "acml_vol"],
+            "columns_sql": "data_rank INT, stck_shrn_iscd VARCHAR(10), hts_kor_isnm VARCHAR(40), stck_prpr INT, prdy_ctrt FLOAT, acml_vol BIGINT"
+        }
+    ]
 
-    create_table = PythonOperator(
-    task_id="create_table",
-    python_callable=create_redshift_table,
-    op_kwargs={"table_name": "transformed_stock_volume"},
-)
+    for endpoint in endpoints:
+        fetch_data_task = PythonOperator(
+            task_id=f"fetch_{endpoint['task_type']}_data",
+            python_callable=fetch_data,
+            op_kwargs=endpoint,
+        )
 
-    upload_to_redshift = PythonOperator(
-        task_id="upload_to_redshift",
-        python_callable=upload_to_redshift,
-        op_kwargs={
-            "task_type": "stock_volume_top10",
-            "table_name": "transformed_stock_volume",
-        },
-    )
+        upload_raw_data_to_s3_task = PythonOperator(
+            task_id=f"upload_raw_{endpoint['task_type']}_data_to_s3",
+            python_callable=upload_raw_to_s3,
+            op_kwargs={
+                "task_type": endpoint["task_type"],
+                "bucket_path": "raw_data",
+            },
+        )
 
-    # 태스크 의존성 설정
-    fetch_volume_data >> upload_raw_data_to_s3 >> process_volume_data >> upload_transformed_data_to_s3 >> create_table >> upload_to_redshift
+        process_data_task = PythonOperator(
+            task_id=f"process_{endpoint['task_type']}_data",
+            python_callable=process_data,
+            op_kwargs={
+                "task_type": endpoint["task_type"],
+                "columns": endpoint["columns"],
+            },
+        )
+
+        upload_transformed_data_to_s3_task = PythonOperator(
+            task_id=f"upload_transformed_{endpoint['task_type']}_data_to_s3",
+            python_callable=upload_transformed_to_s3,
+            op_kwargs={
+                "task_type": endpoint["task_type"],
+                "bucket_path": "transformed_data",
+            },
+        )
+
+        create_table_task = PythonOperator(
+            task_id=f"create_{endpoint['task_type']}_table",
+            python_callable=create_redshift_table,
+            op_kwargs={
+                "table_name": f"transformed_{endpoint['task_type']}",
+                "columns_sql": endpoint["columns_sql"]
+            },
+        )
+
+        upload_to_redshift_task = PythonOperator(
+            task_id=f"upload_{endpoint['task_type']}_data_to_redshift",
+            python_callable=upload_to_redshift,
+            op_kwargs={
+                "task_type": endpoint["task_type"],
+                "table_name": f"transformed_{endpoint['task_type']}",
+            },
+        )
+
+        fetch_data_task >> upload_raw_data_to_s3_task >> process_data_task >> upload_transformed_data_to_s3_task >> create_table_task >> upload_to_redshift_task
