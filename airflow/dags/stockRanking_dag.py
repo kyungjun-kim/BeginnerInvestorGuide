@@ -210,23 +210,54 @@ with DAG(
             "task_type": "stock_volume_top10",
             "endpoint": "uapi/domestic-stock/v1/quotations/volume-rank",
             "tr_id": "FHPST01710000",
-            "params": {"FID_COND_MRKT_DIV_CODE": "J"},
+            "params": {"FID_COND_MRKT_DIV_CODE": "J",  # 시장 구분 코드 (J: 주식, ETF, ETN)
+                        "FID_COND_SCR_DIV_CODE": "20171",  # 조건 화면 분류 코드
+                        "FID_INPUT_ISCD": "0000",  # 전체 종목 대상
+                        "FID_DIV_CLS_CODE": "0",  # 전체 분류
+                        "FID_BLNG_CLS_CODE": "0",  # 평균 거래량 기준
+                        "FID_TRGT_CLS_CODE": "111111111",  # 대상 구분 코드
+                        "FID_TRGT_EXLS_CLS_CODE": "0000000000",  # 제외 대상 없음
+                        "FID_INPUT_PRICE_1": "0",  # 가격 제한 없음
+                        "FID_INPUT_PRICE_2": "0",
+                        "FID_VOL_CNT": "0",  # 거래량 제한 없음
+                        "FID_INPUT_DATE_1": "0"},
             "columns": ["data_rank", "mksc_shrn_iscd", "hts_kor_isnm", "stck_prpr", "acml_vol", "prdy_ctrt"],
             "columns_sql": "data_rank INT, mksc_shrn_iscd VARCHAR(10), hts_kor_isnm VARCHAR(40), stck_prpr INT, acml_vol BIGINT, prdy_ctrt FLOAT"
         },
         {
             "task_type": "market_cap_top10",
-            "endpoint": "uapi/domestic-stock/v1/quotations/market-cap-rank",
-            "tr_id": "FHPST01720000",
-            "params": {"FID_COND_MRKT_DIV_CODE": "J"},
+            "endpoint": "uapi/domestic-stock/v1/ranking/market-cap",
+            "tr_id": "FHPST01740000",
+            "params": {"fid_cond_mrkt_div_code": "J",  # 주식 시장
+                        "fid_cond_scr_div_code": "20174",  # 조건 화면 분류 코드
+                        "fid_div_cls_code": "0",  # 전체 분류
+                        "fid_input_iscd": "0000",  # 전체 종목 대상
+                        "fid_trgt_cls_code": "0",  # 전체 대상
+                        "fid_trgt_exls_cls_code": "0",  # 제외 대상 없음
+                        "fid_input_price_1": "",
+                        "fid_input_price_2": "",
+                        "fid_vol_cnt": ""},
             "columns": ["data_rank", "mksc_shrn_iscd", "hts_kor_isnm", "stck_prpr", "stck_avls", "mrkt_whol_avls_rlim"],
             "columns_sql": "data_rank INT, mksc_shrn_iscd VARCHAR(10), hts_kor_isnm VARCHAR(40), stck_prpr INT, stck_avls BIGINT, mrkt_whol_avls_rlim FLOAT"
         },
         {
             "task_type": "price_change_top10",
-            "endpoint": "uapi/domestic-stock/v1/quotations/price-change",
-            "tr_id": "FHPST01730000",
-            "params": {"FID_COND_MRKT_DIV_CODE": "J"},
+            "endpoint": "uapi/uapi/domestic-stock/v1/ranking/fluctuation",
+            "tr_id": "FHPST01700000",
+            "params": {"fid_cond_mrkt_div_code": "J",  # 전체 시장
+                        "fid_cond_scr_div_code": "20170",
+                        "fid_input_iscd": "0000",  # 전체 종목
+                        "fid_rank_sort_cls_code": sort_code,  # 0: 상승률 순, 1: 하락률 순
+                        "fid_input_cnt_1": "0",
+                        "fid_prc_cls_code": "1",  # 종가 대비 설정
+                        "fid_input_price_1": "",
+                        "fid_input_price_2": "",
+                        "fid_vol_cnt": "",
+                        "fid_trgt_cls_code": "0",
+                        "fid_trgt_exls_cls_code": "0",
+                        "fid_div_cls_code": "0",
+                        "fid_rsfl_rate1": "",
+                        "fid_rsfl_rate2": ""},
             "columns": ["data_rank", "stck_shrn_iscd", "hts_kor_isnm", "stck_prpr", "prdy_ctrt", "acml_vol"],
             "columns_sql": "data_rank INT, stck_shrn_iscd VARCHAR(10), hts_kor_isnm VARCHAR(40), stck_prpr INT, prdy_ctrt FLOAT, acml_vol BIGINT"
         }
