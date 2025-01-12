@@ -6,7 +6,7 @@ from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from datetime import datetime, timedelta
 import requests
 import pandas as pd
-from io import BytesIO
+import os
 
 # API 및 S3, Redshift 설정 가져오기
 def get_connections(conn_id):
@@ -49,40 +49,33 @@ def fetch_data(**kwargs):
     # 상위 10개 데이터만 가져오기
     top_10_data = data[:10]
     
-    # XCom에 저장
-    kwargs['ti'].xcom_push(key=f"{task_type}_data", value=top_10_data)
-    print(f"{task_type} 데이터 XCom에 저장 완료: {top_10_data}")
+    # CSV 파일로 저장
+    file_path = f"/tmp/raw_{task_type}_data_{datetime.now().strftime('%y%m%d')}.csv"
+    pd.DataFrame(top_10_data).to_csv(file_path, index=False, encoding='utf-8-sig')
 
+    # XCom에 파일 경로 저장
+    kwargs['ti'].xcom_push(key=f"{task_type}_csv_path", value=file_path)
+    print(f"{task_type} 데이터가 CSV 파일로 저장되었습니다: {file_path}")
 
 # 데이터를 S3에 저장 (CSV 형식)
 def upload_raw_to_s3(**kwargs):
     task_type = kwargs["task_type"]
-    file_name_prefix = kwargs["file_name_prefix"]
     bucket_path = kwargs["bucket_path"]
 
-    # XCom에서 데이터 가져오기
-    data = kwargs['ti'].xcom_pull(key=f"{task_type}_data", task_ids=f"fetch_{task_type}_data")
-    if not data:
-        raise Exception(f"{task_type} 데이터 S3 업로드 실패: 가져온 데이터가 없습니다.")
+    # XCom에서 CSV 파일 경로 가져오기
+    csv_path = kwargs['ti'].xcom_pull(key=f"{task_type}_csv_path", task_ids=f"fetch_{task_type}_data")
+    if not csv_path or not os.path.exists(csv_path):
+        raise FileNotFoundError(f"CSV 파일 경로를 찾을 수 없습니다: {csv_path}")
 
-    # DataFrame 생성
-    df = pd.DataFrame(data)
-
-    # S3 업로드
+    # S3로 업로드
     s3_hook = S3Hook(aws_conn_id="aws_conn")
-    s3_client = s3_hook.get_conn()
-
-    buffer = BytesIO()
-    df.to_csv(buffer, index=False)  # CSV 형식으로 저장
-    buffer.seek(0)
-    file_name = f"{file_name_prefix}_{datetime.now().strftime('%Y%m%d')}.csv"
-    s3_client.upload_fileobj(buffer, "team6-s3", f"{bucket_path}/{file_name}")
-
-    print(f"{task_type} 데이터를 S3의 {bucket_path}/{file_name}에 CSV 형식으로 저장 완료.")
-
-    # 파일 경로를 XCom에 저장
-    kwargs['ti'].xcom_push(key=f"{task_type}_s3_path_raw", value=f"s3://team6-s3/{bucket_path}/{file_name}")
-
+    s3_hook.load_file(
+        filename=csv_path,
+        bucket_name="team6-s3",
+        key=f"{bucket_path}/{os.path.basename(csv_path)}",
+        replace=True
+    )
+    print(f"{task_type} 데이터를 S3의 {bucket_path}/{os.path.basename(csv_path)}에 저장 완료.")
 
 
 # 데이터를 처리하는 함수
@@ -90,11 +83,14 @@ def process_data(**kwargs):
     task_type = kwargs["task_type"]
     columns = kwargs["columns"]
 
-    # XCom에서 데이터 가져오기
-    data = kwargs['ti'].xcom_pull(key=f"{task_type}_data", task_ids=f"fetch_{task_type}_data")
-
-    # DataFrame 생성
-    df = pd.DataFrame(data[:10], columns=columns)
+    # XCom에서 CSV 파일 경로 가져오기
+    csv_path = kwargs['ti'].xcom_pull(key=f"{task_type}_csv_path", task_ids=f"fetch_{task_type}_data")
+    if not csv_path or not os.path.exists(csv_path):
+        raise FileNotFoundError(f"CSV 파일 경로를 찾을 수 없습니다: {csv_path}")
+    
+    # 데이터 로드 및 처리
+    df = pd.read_csv(csv_path)
+    df = df[columns]
 
     # 데이터 변환 작업 수행
     for col in ["순위", "현재가", "거래량"]:
@@ -104,38 +100,32 @@ def process_data(**kwargs):
     if "등락률" in df.columns:
         df["등락률"] = df["등락률"].apply(lambda x: float(x.strip('%')) / 100 if isinstance(x, str) else x)
 
-    # XCom에 처리된 데이터 저장
-    kwargs['ti'].xcom_push(key=f"{task_type}_df", value=df.to_dict())
+    # 처리된 데이터 저장 (Parquet 포맷)
+    processed_path = f"/tmp/transformed_{task_type}_data_{datetime.now().strftime('%y%m%d')}.parquet"
+    df.to_parquet(processed_path, index=False)
+    kwargs['ti'].xcom_push(key=f"{task_type}_processed_path", value=processed_path)
+    print(f"{task_type} 처리된 데이터가 저장되었습니다: {processed_path}")
 
 
 # S3에 데이터를 저장 (Parquet 형식)
 def upload_transformed_to_s3(**kwargs):
     task_type = kwargs["task_type"]
-    file_name_prefix = kwargs["file_name_prefix"]
     bucket_path = kwargs["bucket_path"]
 
-    # XCom에서 데이터 가져오기
-    data = kwargs['ti'].xcom_pull(key=f"{task_type}_df", task_ids=f"process_{task_type}_data")
-    if not data:
-        raise Exception(f"{task_type} 데이터 S3 업로드 실패: 처리된 데이터가 없습니다.")
+    # XCom에서 처리된 Parquet 파일 경로 가져오기
+    processed_path = kwargs['ti'].xcom_pull(key=f"{task_type}_processed_path", task_ids=f"process_{task_type}_data")
+    if not processed_path or not os.path.exists(processed_path):
+        raise FileNotFoundError(f"처리된 Parquet 파일 경로를 찾을 수 없습니다: {processed_path}")
 
-    # DataFrame 생성
-    df = pd.DataFrame.from_dict(data)
-
-    # S3 업로드
+    # S3로 업로드
     s3_hook = S3Hook(aws_conn_id="aws_conn")
-    s3_client = s3_hook.get_conn()
-
-    buffer = BytesIO()
-    df.to_parquet(buffer, index=False)  # Parquet 형식으로 저장
-    buffer.seek(0)
-    file_name = f"{file_name_prefix}_{datetime.now().strftime('%Y%m%d')}.parquet"
-    s3_client.upload_fileobj(buffer, "team6-s3", f"{bucket_path}/{file_name}")
-
-    print(f"{task_type} 데이터를 S3의 {bucket_path}/{file_name}에 Parquet 형식으로 저장 완료.")
-
-    # 파일 경로를 XCom에 저장
-    kwargs['ti'].xcom_push(key=f"{task_type}_s3_path", value=f"s3://team6-s3/{bucket_path}/{file_name}")
+    s3_hook.load_file(
+        filename=processed_path,
+        bucket_name="team6-s3",
+        key=f"{bucket_path}/{os.path.basename(processed_path)}",
+        replace=True
+    )
+    print(f"{task_type} 처리된 데이터를 S3의 {bucket_path}/{os.path.basename(processed_path)}에 저장 완료.")
 
 
 # Redshift 테이블 생성
@@ -173,10 +163,10 @@ def create_redshift_table(**kwargs):
 def upload_to_redshift(**kwargs):
     task_type = kwargs["task_type"]
     table_name = kwargs["table_name"]
-    s3_path = kwargs['ti'].xcom_pull(key=f"{task_type}_s3_path", task_ids=f"upload_transformed_data_to_s3")
+    processed_path = kwargs['ti'].xcom_pull(key=f"{task_type}_processed_path", task_ids=f"process_{task_type}_data")
 
-    if not s3_path:
-        raise Exception(f"{task_type} 데이터 Redshift 업로드 실패: S3 경로가 없습니다.")
+    if not processed_path:
+        raise Exception(f"{task_type} 데이터 Redshift 업로드 실패: 처리된 데이터 경로가 없습니다.")
 
     # AWS Connection 사용
     aws_conn = get_connections("aws_conn")
@@ -234,7 +224,6 @@ with DAG(
         python_callable=upload_raw_to_s3,
         op_kwargs={
             "task_type": "stock_volume_top10",
-            "file_name_prefix": "raw_stock_volume_top10",  # 변환 전 파일 이름 접두어
             "bucket_path": "raw_data",
         },
     ) 
@@ -253,7 +242,6 @@ with DAG(
         python_callable=upload_transformed_to_s3,
         op_kwargs={
             "task_type": "stock_volume_top10",
-            "file_name_prefix": "transformed_stock_volume_top10",
             "bucket_path": "transformed_data",
         },
     )
