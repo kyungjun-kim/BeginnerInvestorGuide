@@ -173,6 +173,7 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+        
   superset:
     container_name: superset
     image: apache/superset:latest
@@ -182,8 +183,8 @@ services:
       SUPERSET_ADMIN_USER: admin
       SUPERSET_ADMIN_PASSWORD: admin
       SUPERSET_ADMIN_EMAIL: admin@example.com
-      SUPERSET_DATABASE_URL: mysql+pymysql://airflow:airflow@mysql:3306/superset
-      FLASK_APP: superset
+      SUPERSET_DATABASE_URL: mysql+mysqldb://airflow:airflow@mysql:3306/superset
+      FLASK_APP: superset.app:create_app
     volumes:
       - ./superset_home:/app/superset_home
       - ./superset_home/superset_config.py:/app/pythonpath/superset_config.py
@@ -191,25 +192,25 @@ services:
       mysql:
         condition: service_healthy
     restart: always
-    
-  airflow-triggerer:
-    <<: *airflow-common
-    command: triggerer
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"',
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    restart: always
-    depends_on:
-      <<: *airflow-common-depends-on
-      airflow-init:
-        condition: service_completed_successfully
+      
+    airflow-triggerer:
+      <<: *airflow-common
+      command: triggerer
+      healthcheck:
+        test:
+          [
+            "CMD-SHELL",
+            'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"',
+          ]
+        interval: 30s
+        timeout: 10s
+        retries: 5
+        start_period: 30s
+      restart: always
+      depends_on:
+        <<: *airflow-common-depends-on
+        airflow-init:
+          condition: service_completed_successfully
 
   airflow-init:
     <<: *airflow-common
