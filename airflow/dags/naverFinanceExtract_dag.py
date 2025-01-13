@@ -48,6 +48,7 @@ def crawl_stock_data(**kwargs):
     
     try : 
         driver.get(url)
+        print("네이버 뉴스 페이지 접속완료")
         time.sleep(2)  # 페이지 로딩 대기
         i = 0
         while True:
@@ -106,6 +107,7 @@ def crawl_stock_data(**kwargs):
 
     finally:
         driver.quit()
+        print("뉴스 데이터 수집 끝")
         if text_list :
             # 데이터프레임 생성 및 저장
             df = pd.DataFrame(text_list, columns=cols)
@@ -116,7 +118,6 @@ def crawl_stock_data(**kwargs):
             print("뉴스 데이터 생성 완료")
         else :
             print("데이터가 없어 파일을 생성하지 않았습니다.")
-    return df
 
 def crawl_kospi_kosdaq_data(**kwargs):
     # Selenium 드라이버 설정
@@ -213,8 +214,8 @@ def create_and_load_redshift_tables(**kwargs):
             stockCode INT,
             stockName VARCHAR(40),
             investmentOpinion VARCHAR(20),
-            targetPrice INT,
-            currentPrice INT,
+            targetPrice float,
+            currentPrice float,
             title VARCHAR(255),
             text VARCHAR(65535),
             url VARCHAR(255)
