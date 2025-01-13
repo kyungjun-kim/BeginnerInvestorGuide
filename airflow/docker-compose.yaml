@@ -182,7 +182,7 @@ services:
       SUPERSET_ADMIN_USER: admin
       SUPERSET_ADMIN_PASSWORD: admin
       SUPERSET_ADMIN_EMAIL: admin@example.com
-      SUPERSET_DATABASE_URL: sqlite:////app/superset_home/superset.db
+      SUPERSET_DATABASE_URL: mysql+pymysql://airflow:airflow@mysql:3306/superset
       FLASK_APP: superset
     volumes:
       - ./superset_home:/app/superset_home
