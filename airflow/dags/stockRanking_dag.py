@@ -48,11 +48,7 @@ def fetch_data(**kwargs):
 
     # 필요한 컬럼만 필터링
     columns = kwargs["columns"]
-    filtered_data = [
-        {col: item.get(col, None) for col in columns} for item in data
-    ]
-
-    print(f"필터링된 데이터: {filtered_data}")
+    filtered_data = [{col: item.get(col, None) for col in columns} for item in data]
 
     # DataFrame으로 변환
     df = pd.DataFrame(filtered_data)
@@ -69,7 +65,7 @@ def fetch_data(**kwargs):
 
     # XCom에 파일 경로 저장
     kwargs['ti'].xcom_push(key=f"{task_type}_csv_path", value=file_path)
-    print(f"{task_type} 데이터가 CSV 파일로 저장되었습니다: {file_path}")
+    print(f"{task_type} 데이터를 CSV로 저장했습니다: {file_path}")
 
 # 데이터를 S3에 저장 (CSV 파일 업로드)
 def upload_raw_to_s3(**kwargs):
@@ -212,7 +208,7 @@ def upload_transformed_to_s3(**kwargs):
     )
     print(f"{task_type} 처리된 데이터를 S3의 {bucket_path}/{os.path.basename(processed_path)}에 저장 완료.")
 
-# Redshift 테이블 생성 및 데이터 적재 함수
+# Redshift 테이블 생성 함수
 def create_redshift_table(**kwargs):
     table_name = kwargs["table_name"]
     columns_sql = kwargs["columns_sql"]
@@ -226,17 +222,14 @@ def create_redshift_table(**kwargs):
     # 테이블 생성 SQL
     create_table_sql = f"""
     DROP TABLE IF EXISTS {table_name};
-    CREATE TABLE {table_name} (
-        {columns_sql}
-    );
+    CREATE TABLE {table_name} ({columns_sql});
     """
 
     cursor.execute(create_table_sql)
     conn.commit()
     cursor.close()
     conn.close()
-
-    print(f"Redshift 테이블 {table_name}이 성공적으로 생성되었습니다.")
+    print(f"Redshift 테이블 {table_name}이 생성되었습니다.")
 
 # Redshift에 데이터 적재 (COPY 명령)
 def upload_to_redshift(**kwargs):
@@ -268,7 +261,6 @@ def upload_to_redshift(**kwargs):
     conn.commit()
     cursor.close()
     conn.close()
-
     print(f"{task_type} 데이터를 Redshift 테이블 {table_name}에 적재 완료.")
 
 # DAG 정의
