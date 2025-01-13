@@ -9,6 +9,7 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from io import StringIO
 import time, boto3, os, logging
 import pandas as pd
 
@@ -176,34 +177,40 @@ def crawl_kospi_kosdaq_data(**kwargs):
     return df
 
 def save_load_data(**kwargs) :
-    ti = kwargs['ti']
+    #ti = kwargs['ti']
     data_news = crawl_stock_data()
     data_kos  = crawl_kospi_kosdaq_data()
 
     # 뉴스 DF
+    csv_buffer_news = StringIO()
     path_news = f"naverNews_{datetime.now().strftime('%Y%m%d')}.csv"
-    data_news.to_csv(path_news, index=False, encoding="utf-8-sig")
+    #data_news.to_csv(path_news, index=False, encoding="utf-8-sig")
+    data_news.to_csv(csv_buffer_news, index=False, encoding="utf-8-sig")
     print(f"뉴스 CSV 파일 생성 완료.")
-    ti.xcom_push(key='path_news', value=path_news)
+    #ti.xcom_push(key='path_news', value=path_news)
 
     # 코스피코스닥 DF
+    csv_buffer_kos = StringIO()
     path_kos = f"kospi_kosdaq_data_{datetime.now().strftime('%Y%m%d')}.csv"
-    data_kos.to_csv(path_kos, index=False, encoding='utf-8-sig')
+    #data_kos.to_csv(path_kos, index=False, encoding='utf-8-sig')
+    data_kos.to_csv(csv_buffer_kos, index=False, encoding='utf-8-sig')
     print(f"코스피코스닥 CSV 파일 생성 완료.")
-    ti.xcom_push(key='path_kos', value=path_kos)
+    #ti.xcom_push(key='path_kos', value=path_kos)
 
-    path_news = ti.xcom_pull(task_ids='save_news_data', key='path_news')
-    path_kos = ti.xcom_pull(task_ids='save_kos_data', key='path_kos')
+    #path_news = ti.xcom_pull(task_ids='save_news_data', key='path_news')
+    #path_kos = ti.xcom_pull(task_ids='save_kos_data', key='path_kos')
 
     s3_hook = S3Hook(aws_conn_id='aws_conn')
     s3_hook.load_file(
-        filename=ti.xcom_pull(task_ids='save_news_data', key='path_news'),
+        filename = csv_buffer_news.getvalue(),
+        #ti.xcom_pull(task_ids='save_news_data', key='path_news'),
         bucket_name='team6-s3',
         replace=True,
         key=f"raw_data/{os.path.basename(path_news)}"
     )
     s3_hook.load_file(
-        filename=ti.xcom_pull(task_ids='save_kos_data', key='path_kos'),
+        filename = csv_buffer_kos.getvalue(),
+        #ti.xcom_pull(task_ids='save_kos_data', key='path_kos'),
         bucket_name='team6-s3',
         replace=True,
         key=f"raw_data/{os.path.basename(path_kos)}"
