@@ -9,6 +9,7 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from io import StringIO
 import time, boto3, os, logging
 import pandas as pd
 
@@ -49,7 +50,7 @@ def crawl_stock_data(**kwargs):
         driver.get(url)
         time.sleep(2)  # 페이지 로딩 대기
         i = 0
-        while True:
+        while i < 2:
             i += 1
             time.sleep(2)
             search_page = driver.find_elements(By.CLASS_NAME, "ResearchList_item__I6Z7_")[i]
@@ -108,10 +109,13 @@ def crawl_stock_data(**kwargs):
         if text_list :
             # 데이터프레임 생성 및 저장
             df = pd.DataFrame(text_list, columns=cols)
-            print("뉴스 데이터 생성 완료")
+            ti = kwargs['ti']
+            path_news = f"naverNews_{datetime.now().strftime('%Y%m%d')}.csv"
+            df.to_csv(path_news, index=False, encoding="utf-8-sig")
+            ti.xcom_push(key = "path_news" ,value = path_news)
+            return "뉴스 데이터 생성 완료"
         else :
-            print("데이터가 없어 파일을 생성하지 않았습니다.")
-
+            return "데이터가 없어 파일을 생성하지 않았습니다."
     return df
 
 def crawl_kospi_kosdaq_data(**kwargs):
@@ -169,41 +173,30 @@ def crawl_kospi_kosdaq_data(**kwargs):
         if data :
             # 데이터프레임 생성 및 저장
             df = pd.DataFrame(data)
-            print("뉴스 데이터 생성 완료")
+            #print("뉴스 데이터 생성 완료")
+            ti = kwargs['ti']
+            path_kos = f"kospi_kosdaq_data_{datetime.now().strftime('%Y%m%d')}.csv"
+            df.to_csv(path_kos, index=False, encoding="utf-8-sig")
+            ti.xcom_push(key = "path_kos" ,value = path_kos)
+            return "뉴스 데이터 생성 완료"
         else :
-            print("데이터가 없어 파일을 생성하지 않았습니다.")
-
-    return df
+            return "데이터가 없어 파일을 생성하지 않았습니다."
 
 def save_load_data(**kwargs) :
     ti = kwargs['ti']
-    data_news = crawl_stock_data()
-    data_kos  = crawl_kospi_kosdaq_data()
+    path_news = ti.xcom_pull(task_ids='crawl_stock_data', key ='path_news')
+    path_kos = ti.xcom_pull(task_ids='crawl_kospi_kosdaq_data',  key ='path_news')
 
-    # 뉴스 DF
-    path_news = f"naverNews_{datetime.now().strftime('%Y%m%d')}.csv"
-    data_news.to_csv(path_news, index=False, encoding="utf-8-sig")
-    print(f"뉴스 CSV 파일 생성 완료.")
-    ti.xcom_push(key='path_news', value=path_news)
-
-    # 코스피코스닥 DF
-    path_kos = f"kospi_kosdaq_data_{datetime.now().strftime('%Y%m%d')}.csv"
-    data_kos.to_csv(path_kos, index=False, encoding='utf-8-sig')
-    print(f"코스피코스닥 CSV 파일 생성 완료.")
-    ti.xcom_push(key='path_kos', value=path_kos)
-
-    path_news = ti.xcom_pull(task_ids='save_news_data', key='path_news')
-    path_kos = ti.xcom_pull(task_ids='save_kos_data', key='path_kos')
-
+    # S3 업로드
     s3_hook = S3Hook(aws_conn_id='aws_conn')
     s3_hook.load_file(
-        filename=ti.xcom_pull(task_ids='save_news_data', key='path_news'),
+        filename = path_news,
         bucket_name='team6-s3',
         replace=True,
         key=f"raw_data/{os.path.basename(path_news)}"
     )
     s3_hook.load_file(
-        filename=ti.xcom_pull(task_ids='save_kos_data', key='path_kos'),
+        filename = path_kos,
         bucket_name='team6-s3',
         replace=True,
         key=f"raw_data/{os.path.basename(path_kos)}"
@@ -324,4 +317,4 @@ create_and_load_redshift_task = PythonOperator(
 )
 
 # Task 순서 정의
-crawl_stock_task >> crawl_kospi_kosdaq_task  >> upload_to_s3_task >> create_and_load_redshift_task
+crawl_stock_task >> crawl_kospi_kosdaq_task >> upload_to_s3_task >> create_and_load_redshift_task
