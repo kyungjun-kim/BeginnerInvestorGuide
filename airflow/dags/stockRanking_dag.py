@@ -58,9 +58,7 @@ def fetch_data(**kwargs):
     df = pd.DataFrame(filtered_data)
 
     if "종목코드" in df.columns:
-        df["종목코드"] = df["종목코드"].apply(
-            lambda x: str(x).zfill(6) if isinstance(x, str) else str(int(x)).zfill(6) if pd.notnull(x) else x
-        )
+        df["종목코드"] = df["종목코드"].astype(str).str.zfill(6)
 
     # 상위 10개 데이터만 가져오기
     top_10_data = df.head(10)
@@ -178,8 +176,10 @@ def process_data(**kwargs):
     for col, dtype in dtypes.items():
         if col in df.columns:
             # 컬럼명이 '종목코드' 또는 '종목명'인 경우 문자열로 변환
-            if col in ["종목코드", "종목명"]:
-                df[col] = df[col].astype(str)
+            if col == "종목코드":
+                df[col] = df[col].astype(str).str.zfill(6)  # 문자열로 변환하고 앞에 0 채우기
+            elif col == "종목명":
+                df[col] = df[col].astype(str)  # 문자열로 변환
             else:
                 # 나머지 데이터는 숫자로 변환
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(dtype)
