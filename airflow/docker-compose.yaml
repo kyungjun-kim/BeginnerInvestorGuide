@@ -66,7 +66,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
     AIRFLOW__FLOWER__AUTHENTICATED_API: "true"
     AIRFLOW__CORE__TEST_CONNECTION: "true"
-    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:- pandas requests s3fs boto3 selenium webdriver_manager}
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:- pandas requests s3fs boto3 selenium webdriver_manager mysqlclient}
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
@@ -175,17 +175,19 @@ services:
         condition: service_completed_successfully
         
   superset:
+    command: >
+      gunicorn -w 2 -k gthread -b 0.0.0.0:8088 "superset.app:create_app()"
     container_name: superset
-    image: apache/superset:latest
+    build: .
     ports:
-      - "8088:8088"
+    - "8088:8088"
     environment:
       SUPERSET_ADMIN_USER: admin
       SUPERSET_ADMIN_PASSWORD: admin
       SUPERSET_ADMIN_EMAIL: admin@example.com
       SUPERSET_DATABASE_URL: mysql+mysqldb://airflow:airflow@mysql:3306/superset
       FLASK_APP: superset
-      _PIP_ADDITIONAL_REQUIREMENTS: mysqlclient
+      _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:- mysqlclient}
     volumes:
       - ./superset_home:/app/superset_home
       - ./superset_home/superset_config.py:/app/pythonpath/superset_config.py
@@ -196,12 +198,12 @@ services:
       
   airflow-trigger:
     <<: *airflow-common
-    command: triggerer
+    command: trigger
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"',
+          'airflow jobs check --job-type TriggerJob --hostname "$${HOSTNAME}"',
         ]
       interval: 30s
       timeout: 10s
