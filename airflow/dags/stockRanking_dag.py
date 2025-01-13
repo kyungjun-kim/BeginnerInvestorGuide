@@ -88,23 +88,96 @@ def upload_raw_to_s3(**kwargs):
 # 데이터를 처리하는 함수
 def process_data(**kwargs):
     task_type = kwargs["task_type"]
-    columns = kwargs["columns"]
 
     # XCom에서 CSV 파일 경로 가져오기
     csv_path = kwargs['ti'].xcom_pull(key=f"{task_type}_csv_path", task_ids=f"fetch_{task_type}_data")
     if not csv_path or not os.path.exists(csv_path):
         raise FileNotFoundError(f"CSV 파일 경로를 찾을 수 없습니다: {csv_path}")
 
-    # 데이터 로드 및 처리
+    # 데이터 로드 및 컬럼 확인
     df = pd.read_csv(csv_path)
 
-    for col in ["순위", "현재가", "거래량"]:
+    # 컬럼 이름 매핑 및 스키마 정의
+    schema_mapping = {
+        "stock_volume_top10": {
+            "columns": {
+                "data_rank": "순위",
+                "mksc_shrn_iscd": "종목코드",
+                "hts_kor_isnm": "종목명",
+                "stck_prpr": "현재가",
+                "acml_vol": "거래량",
+                "prdy_ctrt": "등락율",
+            },
+            "dtypes": {
+                "순위": "int32",
+                "종목코드": "string",
+                "종목명": "string",
+                "현재가": "int32",
+                "거래량": "int64",
+                "등락율": "float64",
+            },
+        },
+        "market_cap_top10": {
+            "columns": {
+                "data_rank": "순위",
+                "mksc_shrn_iscd": "종목코드",
+                "hts_kor_isnm": "종목명",
+                "stck_prpr": "현재가",
+                "stck_avls": "시가총액(억)",
+                "mrkt_whol_avls_rlim": "시장비중(%)",
+            },
+            "dtypes": {
+                "순위": "int32",
+                "종목코드": "string",
+                "종목명": "string",
+                "현재가": "int32",
+                "시가총액(억)": "int64",
+                "시장비중(%)": "float64",
+            },
+        },
+        "price_change_top10": {
+            "columns": {
+                "data_rank": "순위",
+                "stck_shrn_iscd": "종목코드",
+                "hts_kor_isnm": "종목명",
+                "stck_prpr": "현재가",
+                "prdy_ctrt": "전일대비율",
+                "acml_vol": "누적거래량",
+            },
+            "dtypes": {
+                "순위": "int32",
+                "종목코드": "string",
+                "종목명": "string",
+                "현재가": "int32",
+                "전일대비율": "float64",
+                "누적거래량": "int64",
+            },
+        },
+    }
+
+    # 매핑 정보 가져오기
+    if task_type not in schema_mapping:
+        raise ValueError(f"'{task_type}'에 대한 스키마 매핑이 정의되지 않았습니다.")
+
+    task_schema = schema_mapping[task_type]
+    column_mapping = task_schema["columns"]
+    dtypes = task_schema["dtypes"]
+
+    # 컬럼 이름 변경
+    df.rename(columns=column_mapping, inplace=True)
+
+    # 데이터 타입 변환
+    for col, dtype in dtypes.items():
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col].str.replace(',', ''), errors='coerce').fillna(0).astype(int)
-
-    if "등락률" in df.columns:
-        df["등락률"] = df["등락률"].apply(lambda x: float(x.strip('%')) / 100 if isinstance(x, str) else x)
-
+            # 컬럼명이 '종목코드' 또는 '종목명'인 경우 문자열로 변환
+            if col in ["종목코드", "종목명"]:
+                df[col] = df[col].astype(str)
+            else:
+                # 나머지 데이터는 숫자로 변환
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(dtype)
+        else:
+            raise KeyError(f"'{col}' 컬럼이 데이터프레임에 없습니다.")
+            
     # 처리된 데이터 저장 (Parquet 포맷)
     processed_path = f"/tmp/transformed_{task_type}_data_{datetime.now().strftime('%y%m%d')}.parquet"
     df.to_parquet(processed_path, index=False)
@@ -144,7 +217,8 @@ def create_redshift_table(**kwargs):
 
     # 테이블 생성 SQL
     create_table_sql = f"""
-    CREATE TABLE IF NOT EXISTS {table_name} (
+    DROP TABLE IF EXISTS {table_name};
+    CREATE TABLE {table_name} (
         {columns_sql}
     );
     """
@@ -166,7 +240,7 @@ def upload_to_redshift(**kwargs):
         raise Exception(f"{task_type} 데이터 Redshift 업로드 실패: 처리된 데이터 경로가 없습니다.")
 
     # AWS Connection 사용
-    aws_conn = get_connections("aws_conn")
+    aws_conn = BaseHook.get_connection("aws_conn")
     access_key = aws_conn.login  # AWS Access Key ID
     secret_key = aws_conn.password
 
@@ -177,7 +251,7 @@ def upload_to_redshift(**kwargs):
     # COPY 명령 실행
     copy_sql = f"""
     COPY {table_name}
-    FROM 's3://team6-s3/{processed_path.split('/')[-1]}'
+    FROM 's3://team6-s3/transformed_data/{os.path.basename(processed_path)}'
     ACCESS_KEY_ID '{access_key}'
     SECRET_ACCESS_KEY '{secret_key}'
     FORMAT AS PARQUET;
@@ -222,7 +296,7 @@ with DAG(
                         "FID_VOL_CNT": "0",  # 거래량 제한 없음
                         "FID_INPUT_DATE_1": "0"},
             "columns": ["data_rank", "mksc_shrn_iscd", "hts_kor_isnm", "stck_prpr", "acml_vol", "prdy_ctrt"],
-            "columns_sql": "data_rank INT, mksc_shrn_iscd VARCHAR(10), hts_kor_isnm VARCHAR(40), stck_prpr INT, acml_vol BIGINT, prdy_ctrt FLOAT"
+            "columns_sql": "\"순위\" INT4, \"종목코드\" VARCHAR(10), \"종목명\" VARCHAR(40), \"현재가\" INT4, \"거래량\" INT8, \"등락율\" FLOAT8"
         },
         {
             "task_type": "market_cap_top10",
@@ -238,16 +312,16 @@ with DAG(
                         "fid_input_price_2": "",
                         "fid_vol_cnt": ""},
             "columns": ["data_rank", "mksc_shrn_iscd", "hts_kor_isnm", "stck_prpr", "stck_avls", "mrkt_whol_avls_rlim"],
-            "columns_sql": "data_rank INT, mksc_shrn_iscd VARCHAR(10), hts_kor_isnm VARCHAR(40), stck_prpr INT, stck_avls BIGINT, mrkt_whol_avls_rlim FLOAT"
+            "columns_sql": "\"순위\" INT4, \"종목코드\" VARCHAR(10), \"종목명\" VARCHAR(40), \"현재가\" INT4, \"시가총액(억)\" INT8, \"시장비중(%)\" FLOAT8"
         },
         {
             "task_type": "price_change_top10",
-            "endpoint": "uapi/uapi/domestic-stock/v1/ranking/fluctuation",
+            "endpoint": "uapi/domestic-stock/v1/ranking/fluctuation",
             "tr_id": "FHPST01700000",
             "params": {"fid_cond_mrkt_div_code": "J",  # 전체 시장
                         "fid_cond_scr_div_code": "20170",
                         "fid_input_iscd": "0000",  # 전체 종목
-                        "fid_rank_sort_cls_code": sort_code,  # 0: 상승률 순, 1: 하락률 순
+                        "fid_rank_sort_cls_code": "0",  # 0: 상승률 순, 1: 하락률 순
                         "fid_input_cnt_1": "0",
                         "fid_prc_cls_code": "1",  # 종가 대비 설정
                         "fid_input_price_1": "",
@@ -259,7 +333,7 @@ with DAG(
                         "fid_rsfl_rate1": "",
                         "fid_rsfl_rate2": ""},
             "columns": ["data_rank", "stck_shrn_iscd", "hts_kor_isnm", "stck_prpr", "prdy_ctrt", "acml_vol"],
-            "columns_sql": "data_rank INT, stck_shrn_iscd VARCHAR(10), hts_kor_isnm VARCHAR(40), stck_prpr INT, prdy_ctrt FLOAT, acml_vol BIGINT"
+            "columns_sql": "\"순위\" INT4, \"종목코드\" VARCHAR(10), \"종목명\" VARCHAR(40), \"현재가\" INT4, \"전일대비율\" FLOAT8, \"누적거래량\" INT8"
         }
     ]
 
@@ -282,10 +356,7 @@ with DAG(
         process_data_task = PythonOperator(
             task_id=f"process_{endpoint['task_type']}_data",
             python_callable=process_data,
-            op_kwargs={
-                "task_type": endpoint["task_type"],
-                "columns": endpoint["columns"],
-            },
+            op_kwargs=endpoint,
         )
 
         upload_transformed_data_to_s3_task = PythonOperator(
