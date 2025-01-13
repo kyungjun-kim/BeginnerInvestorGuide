@@ -54,8 +54,14 @@ def fetch_data(**kwargs):
 
     print(f"필터링된 데이터: {filtered_data}")
 
+    # DataFrame으로 변환
+    df = pd.DataFrame(filtered_data)
+
+    if "종목코드" in df.columns:
+        df["종목코드"] = df["종목코드"].astype(str).str.zfill(6)
+
     # 상위 10개 데이터만 가져오기
-    top_10_data = filtered_data[:10]
+    top_10_data = df.head(10)
 
     # CSV 파일로 저장
     file_path = f"/tmp/raw_{task_type}_data_{datetime.now().strftime('%y%m%d')}.csv"
@@ -296,7 +302,7 @@ with DAG(
                         "FID_VOL_CNT": "0",  # 거래량 제한 없음
                         "FID_INPUT_DATE_1": "0"},
             "columns": ["data_rank", "mksc_shrn_iscd", "hts_kor_isnm", "stck_prpr", "acml_vol", "prdy_ctrt"],
-            "columns_sql": "\"순위\" INT4, \"종목코드\" VARCHAR(10), \"종목명\" VARCHAR(40), \"현재가\" INT4, \"거래량\" INT8, \"등락율\" FLOAT8"
+            "columns_sql": "\"순위\" INT4, \"종목코드\" VARCHAR(10), \"종목명\" VARCHAR(50), \"현재가\" INT4, \"거래량\" INT8, \"등락율\" FLOAT8"
         },
         {
             "task_type": "market_cap_top10",
@@ -312,7 +318,7 @@ with DAG(
                         "fid_input_price_2": "",
                         "fid_vol_cnt": ""},
             "columns": ["data_rank", "mksc_shrn_iscd", "hts_kor_isnm", "stck_prpr", "stck_avls", "mrkt_whol_avls_rlim"],
-            "columns_sql": "\"순위\" INT4, \"종목코드\" VARCHAR(10), \"종목명\" VARCHAR(40), \"현재가\" INT4, \"시가총액(억)\" INT8, \"시장비중(%)\" FLOAT8"
+            "columns_sql": "\"순위\" INT4, \"종목코드\" VARCHAR(10), \"종목명\" VARCHAR(50), \"현재가\" INT4, \"시가총액(억)\" INT8, \"시장비중(%)\" FLOAT8"
         },
         {
             "task_type": "price_change_top10",
@@ -333,7 +339,7 @@ with DAG(
                         "fid_rsfl_rate1": "",
                         "fid_rsfl_rate2": ""},
             "columns": ["data_rank", "stck_shrn_iscd", "hts_kor_isnm", "stck_prpr", "prdy_ctrt", "acml_vol"],
-            "columns_sql": "\"순위\" INT4, \"종목코드\" VARCHAR(10), \"종목명\" VARCHAR(40), \"현재가\" INT4, \"전일대비율\" FLOAT8, \"누적거래량\" INT8"
+            "columns_sql": "\"순위\" INT4, \"종목코드\" VARCHAR(10), \"종목명\" VARCHAR(50), \"현재가\" INT4, \"전일대비율\" FLOAT8, \"누적거래량\" INT8"
         }
     ]
 
