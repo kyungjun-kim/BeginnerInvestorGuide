@@ -48,6 +48,7 @@ def crawl_stock_data(**kwargs):
     
     try : 
         driver.get(url)
+        print("네이버 뉴스 페이지 접속완료")
         time.sleep(2)  # 페이지 로딩 대기
         i = 0
         while True:
@@ -106,6 +107,7 @@ def crawl_stock_data(**kwargs):
 
     finally:
         driver.quit()
+        print("뉴스 데이터 수집 끝")
         if text_list :
             # 데이터프레임 생성 및 저장
             df = pd.DataFrame(text_list, columns=cols)
