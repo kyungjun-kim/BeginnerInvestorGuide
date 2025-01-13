@@ -118,7 +118,6 @@ def crawl_stock_data(**kwargs):
             print("뉴스 데이터 생성 완료")
         else :
             print("데이터가 없어 파일을 생성하지 않았습니다.")
-    return df
 
 def crawl_kospi_kosdaq_data(**kwargs):
     # Selenium 드라이버 설정
@@ -215,8 +214,8 @@ def create_and_load_redshift_tables(**kwargs):
             stockCode INT,
             stockName VARCHAR(40),
             investmentOpinion VARCHAR(20),
-            targetPrice INT,
-            currentPrice INT,
+            targetPrice float,
+            currentPrice float,
             title VARCHAR(255),
             text VARCHAR(65535),
             url VARCHAR(255)
