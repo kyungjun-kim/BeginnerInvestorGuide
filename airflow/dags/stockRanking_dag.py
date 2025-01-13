@@ -58,7 +58,9 @@ def fetch_data(**kwargs):
     df = pd.DataFrame(filtered_data)
 
     if "종목코드" in df.columns:
-        df["종목코드"] = df["종목코드"].astype(str).str.zfill(6)
+        df["종목코드"] = df["종목코드"].apply(
+            lambda x: str(x).zfill(6) if isinstance(x, str) else str(int(x)).zfill(6) if pd.notnull(x) else x
+        )
 
     # 상위 10개 데이터만 가져오기
     top_10_data = df.head(10)
