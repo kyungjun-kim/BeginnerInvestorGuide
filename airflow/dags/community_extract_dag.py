@@ -332,7 +332,6 @@ def extract_raw_data(**kwargs):
     all_posts = ti.xcom_pull(task_ids='crawling_data', key='all_posts')
     
     results_df = extract_stock_keywords(all_posts, alias_path, stopwords_path)
-    
     raw_data_path = f"/tmp/community_raw_data_{datetime.now()}.csv"
     results_df.to_csv(raw_data_path, index=False, encoding='utf-8-sig')    
     ti.xcom_push(key='raw_data_path', value=raw_data_path)
@@ -356,6 +355,70 @@ def upload_to_s3(**kwargs):
             key=f"raw_data/{os.path.basename(file_path)}"
         )
 
+# 4. Trasform data 
+def extract_transformed_data(**kwargs):
+    ti = kwargs['ti']
+    
+    # Read community raw data
+    s3 = boto3.client('s3')
+    obj = s3.get_object(Bucket="team6-s3", Key="raw_data/community_raw_data.csv")
+    raw_data = json.loads(obj['Body'].read().decode('utf-8'))
+    raw_data_df = pd.DataFrame(raw_data)
+
+    # Read stock name list
+    kospi_obj = s3.get_object(Bucket="team6-s3", Key="raw_data/kospi_stocks.csv")
+    kospi_stocks_df = pd.read_csv(kospi_obj['Body'])
+    kospi_stock_names = kospi_stocks_df['종목명'].tolist()
+    
+    # Extract top 10 mentioned stock 
+    stock_mentions = Counter()
+    for index, row in raw_data_df.iterrows():
+        keywords = row['keywords']
+        for keyword in keywords:
+            # Count only stock names
+            if keyword in kospi_stock_names:
+                stock_mentions[keyword] += keywords[keyword]
+
+    top_stocks = stock_mentions.most_common(10)
+    top_stocks_df = pd.DataFrame(top_stocks, columns=['stock_name', 'mention_count'])
+
+    # Extract top 15 keywords
+    all_keywords = {}
+    for index, row in raw_data_df.iterrows():
+        keywords = row['keywords']
+        for keyword in keywords:
+            if keyword not in kospi_stock_names:
+                all_keywords[keyword] = all_keywords.get(keyword, 0) + keywords[keyword]
+    
+    top_keywords = sorted(all_keywords.items(), key=lambda x: x[1], reverse=True)[:15]
+    top_keywords_df = pd.DataFrame(top_keywords, columns=['keyword', 'mention_count'])
+
+    top_stocks_path = f"/tmp/community_top10_data_{datetime.now()}.csv"
+    top_stocks_df.to_csv(top_stocks_path, index=False, encoding='utf-8-sig')    
+    ti.xcom_push(key='top_stocks_path', value=top_stocks_path)
+    
+    top_keywords_path = f"/tmp/community_top_keyword_data_{datetime.now()}.csv"
+    top_keywords_df.to_csv(top_keywords_path, index=False, encoding='utf-8-sig')    
+    ti.xcom_push(key='top_keywords_path', value=top_stocks_path)
+
+# 5. Upload to S3
+def upload_to_s3_trasformed_data(**kwargs):
+    ti = kwargs['ti']
+    file_paths = [
+        ti.xcom_pull(task_ids='extract_transformed_data', key='top_stocks_path'),
+        ti.xcom_pull(task_ids='extract_transformed_data', key='top_keywords_path')
+    ]
+
+    s3_hook = S3Hook(aws_conn_id='aws_conn')
+
+    for file_path in file_paths:
+        s3_hook.load_file(
+            filename=file_path,
+            bucket_name='team6-s3',
+            replace=True,
+            key=f"transformed_data/{os.path.basename(file_path)}"
+        )
+    
 # Task 
 crawling_data_task = PythonOperator(
     task_id='save_crawling_data',
@@ -375,4 +438,16 @@ upload_s3_task = PythonOperator(
     dag=dag
 )
 
-crawling_data_task >> extract_raw_data_task >> upload_s3_task
+extract_transformed_data_task = PythonOperator(
+    task_id='extract_transformed_data',
+    python_callable=extract_transformed_data,
+    dag=dag
+)
+
+upload_s3_transformed_data_task = PythonOperator(
+    task_id='upload_to_s3_trasformed_data',
+    python_callable=upload_to_s3,
+    dag=dag
+)
+
+crawling_data_task >> extract_raw_data_task >> upload_s3_task >> extract_transformed_data_task >> upload_s3_transformed_data_task
