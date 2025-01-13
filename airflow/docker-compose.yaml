@@ -175,8 +175,6 @@ services:
         condition: service_completed_successfully
         
   superset:
-    command: >
-      gunicorn -w 2 -k gthread -b 0.0.0.0:8088 "superset.app:create_app()"
     container_name: superset
     build: .
     ports:
@@ -195,6 +193,8 @@ services:
       mysql:
         condition: service_healthy
     restart: always
+    command: >
+      gunicorn -w 2 -k gthread -b 0.0.0.0:8088 "superset.app:create_app()"
       
   airflow-trigger:
     <<: *airflow-common

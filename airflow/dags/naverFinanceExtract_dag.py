@@ -53,7 +53,7 @@ def crawl_stock_data(**kwargs):
         i = 0
         while True:
             i += 1
-            time.sleep(2)
+            time.sleep(1.5)
             search_page = driver.find_elements(By.CLASS_NAME, "ResearchList_item__I6Z7_")[i]
 
             news_date = driver.find_elements(By.CLASS_NAME, 'ResearchList_description___nHPv')[1].text.strip(".")
@@ -68,7 +68,7 @@ def crawl_stock_data(**kwargs):
                     driver.execute_script(f"window.scrollBy(0, 110);")
                     search_page.click()
 
-            time.sleep(2)
+            time.sleep(1.5)
 
             news_url = driver.current_url
 
@@ -99,7 +99,7 @@ def crawl_stock_data(**kwargs):
                 text_list.append(tmp)
 
             driver.back()
-            time.sleep(2)
+            time.sleep(0.5)
             driver.execute_script(f"window.scrollBy(0, 110);")
 
     except Exception as e:
