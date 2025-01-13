@@ -14,6 +14,10 @@ import os
 from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
+import re
+import torch
+from transformers import BertTokenizer, BertModel
+from collections import Counter
 
 
 # Setting DAG 
@@ -194,38 +198,174 @@ def get_clien_posts(base_url):
         page += 1
     return posts
 
+# Load files from S3
+def load_s3_file(bucket_name, file_key, download_path):
+    s3 = boto3.client('s3')
+    s3.download_file(bucket_name, file_key, download_path)
+
+def load_stopwords(file_path):
+    with open(file_path, 'r', encoding='utf-8') as f:
+        stopwords = set(line.strip() for line in f if line.strip())
+    return stopwords
+
+def load_stock_aliases(file_path):
+    with open(file_path, 'r', encoding='utf-8') as f:
+        alias_dict = json.load(f)
+    return alias_dict
+
+def match_stock_names_with_aliases(text, stock_aliases):
+    matched_stocks = []
+    alias_to_main = {}
+
+    for main_stock, aliases in stock_aliases.items():
+        alias_to_main[main_stock] = main_stock
+        for alias in aliases:
+            alias_to_main[alias] = main_stock
+
+    extended_stock_names = set(alias_to_main.keys())
+
+    for stock in sorted(extended_stock_names, key=len, reverse=True):
+        if stock in text:
+            matched_stocks.append(alias_to_main[stock])
+            text = text.replace(stock, '')
+
+    return matched_stocks, text
+
+# Extract keywords using KoBERT
+def extract_keywords_with_kobert(text, tokenizer, model, stopwords):
+    keywords = []
+    split_texts = [text[i:i+512] for i in range(0, len(text), 512)]
+
+    for chunk in split_texts:
+        inputs = tokenizer(chunk, return_tensors='pt', truncation=True, padding='max_length', max_length=512)
+        with torch.no_grad():
+            outputs = model(**inputs)
+
+        input_ids = inputs['input_ids'][0]
+        tokens = tokenizer.convert_ids_to_tokens(input_ids)
+
+        combined_tokens = []
+        temp_token = ''
+        for token in tokens:
+            if token.startswith('##'):
+                temp_token += token[2:]
+            else:
+                if temp_token:
+                    combined_tokens.append(temp_token)
+                    temp_token = ''
+                if len(token) > 1 and re.match(r'[가-힣a-zA-Z]+', token):
+                    combined_tokens.append(token)
+        if temp_token:
+            combined_tokens.append(temp_token)
+
+        keywords.extend([token for token in combined_tokens if token not in stopwords])
+
+    return keywords
+
 # 1. Process of crawling and Save data
-def crawl_and_save_data(**kwargs):
+def crawling_data(**kwargs):
     ti = kwargs['ti']
+    
     clien_url = "https://www.clien.net/service/board/cm_stock"
     fm_url = "https://www.fmkorea.com/index.php?mid=stock&category=2997203870"
     
     clien_posts = get_clien_posts(clien_url)
     fm_posts = get_fmkorea_posts(fm_url)
+    all_posts = clien_posts + fm_posts
     
-    crawling_df = pd.DataFrame(clien_posts + fm_posts)
-    csv_path = f"/tmp/community_crawling_{datetime.now()}.csv"
-    crawling_df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+    crawling_df = pd.DataFrame(all_posts)
+    crawling_path = f"/tmp/community_crawling_{datetime.now()}.csv"
+    crawling_df.to_csv(crawling_path, index=False, encoding='utf-8-sig')
     
+    ti.xcom_push(key='crawling_path', value=crawling_path)
     print("[Done] Create community crawling csv file.")
-    ti.xcom_push(key='csv_path', value=csv_path)
+    
+    ti.xcom_push(key='all_posts', value=all_posts)
+    print("[Done] Crawling data pushed to XCom.")
+
+# 2. Extract keywords to use KoBERT
+def extract_stock_keywords(posts, alias_path, stopwords_path):
+    stock_aliases = load_stock_aliases(alias_path)
+    stopwords = load_stopwords(stopwords_path)
+
+    tokenizer = BertTokenizer.from_pretrained('monologg/kobert')
+    model = BertModel.from_pretrained('monologg/kobert')
+
+    results = []
+
+    for post in posts:
+        text = str(post['title']) + " " + str(post['text'])
+        text = re.sub(r'[^가-힣a-zA-Z0-9\s]', '', text)
+
+        matched_stocks, text = match_stock_names_with_aliases(text, stock_names, stock_aliases)
+        kobert_keywords = extract_keywords_with_kobert(text, tokenizer, model, stopwords)
+
+        keyword_counts = Counter(matched_stocks + kobert_keywords)
+        keyword_counts_dict = dict(sorted(keyword_counts.items(), key=lambda x: x[1], reverse=True))
+
+        results.append({
+            'title': post['title'],
+            'date': post['date'],
+            'text': post['text'],
+            'link': post['link'],
+            'keywords': keyword_counts_dict
+        })
+
+    return pd.DataFrame(results)
+
+def extract_raw_data(**kwargs):
+    ti = kwargs['ti']
+    
+    # Load data from S3
+    bucket_name = 'team6-s3'
+    base_path = '/tmp/'
+    files = {
+        'alias': 'data/raw_data/stock_alias.json',
+        'stopwords': 'data/stopwords.txt'
+    }
+    
+    for key, file_key in files.items():
+        load_s3_file(bucket_name, file_key, os.path.join(base_path, key))
+    
+    alias_path = os.path.join(base_path, 'alias')
+    stopwords_path = os.path.join(base_path, 'stopwords')
+    all_posts = ti.xcom_pull(task_ids='crawling_data', key='all_posts')
+    
+    results_df = extract_stock_keywords(all_posts, alias_path, stopwords_path)
+    
+    raw_data_path = f"/tmp/community_raw_data_{datetime.now()}.csv"
+    results_df.to_csv(raw_data_path, index=False, encoding='utf-8-sig')    
+    ti.xcom_push(key='raw_data_path', value=raw_data_path)
+    print("[Done] Create community raw data csv file.")
     
 # 3. Upload to S3
 def upload_to_s3(**kwargs):
     ti = kwargs['ti']
-    csv_path = ti.xcom_pull(task_ids='crawl_and_save_data', key='csv_path')
+    file_paths = [
+        ti.xcom_pull(task_ids='crawling_data', key='crawling_path'),
+        ti.xcom_pull(task_ids='extract_raw_data', key='raw_data_path')
+    ]
 
     s3_hook = S3Hook(aws_conn_id='aws_conn')
-    s3_hook.load_file(
-        filename=csv_path,
-        bucket_name='team6-s3',
-        replace=True,
-        key=f"raw_data/{os.path.basename(csv_path)}"
-    )
 
-crawl_and_save_task = PythonOperator(
-    task_id='crawl_and_save_data',
-    python_callable=crawl_and_save_data,
+    for file_path in file_paths:
+        s3_hook.load_file(
+            filename=file_path,
+            bucket_name='team6-s3',
+            replace=True,
+            key=f"raw_data/{os.path.basename(file_path)}"
+        )
+
+# Task 
+crawling_data_task = PythonOperator(
+    task_id='save_crawling_data',
+    python_callable=crawling_data,
+    dag=dag
+)
+
+extract_raw_data_task = PythonOperator(
+    task_id='extract_raw_data',
+    python_callable=extract_raw_data,
     dag=dag
 )
 
@@ -235,4 +375,4 @@ upload_s3_task = PythonOperator(
     dag=dag
 )
 
-crawl_and_save_task >> upload_s3_task
+crawling_data_task >> extract_raw_data_task >> upload_s3_task
