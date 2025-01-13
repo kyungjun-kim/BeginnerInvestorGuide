@@ -9,6 +9,7 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from io import StringIO
 import time, boto3, os, logging
 import pandas as pd
 
@@ -108,14 +109,16 @@ def crawl_stock_data(**kwargs):
         if text_list :
             # 데이터프레임 생성 및 저장
             df = pd.DataFrame(text_list, columns=cols)
+            ti = kwargs['ti']
+            path_news = f"naverNews_{datetime.now().strftime('%Y%m%d')}.csv"
+            df.to_csv(path_news, index=False, encoding="utf-8-sig")
+            ti.xcom_push(key = "path_news" ,value = path_news)
             print("뉴스 데이터 생성 완료")
         else :
             print("데이터가 없어 파일을 생성하지 않았습니다.")
-
     return df
 
 def crawl_kospi_kosdaq_data(**kwargs):
-    # Selenium 드라이버 설정
     # Selenium 드라이버 설정
     driver = init_driver()
     print("드라이버 생성 완료")
@@ -142,20 +145,11 @@ def crawl_kospi_kosdaq_data(**kwargs):
 
         # 데이터 저장
         data.append({
-            'indexName': "kospi_index",
-            'value': kospi_index
-        })
-        data.append({
-            'indexName': 'kospi_rate',
-            'value': kospi_rate
-        })
-        data.append({
-            'indexName': 'kosdaq_index',
-            'value': kosdaq_index
-        })
-        data.append({
-            'indexName': 'kosdaq_rate',
-            'value': kosdaq_rate
+            "date" : datetime.now().strftime('%Y-%m-%d'),
+            "kospi_index" : float(kospi_index.replace(",",'')),
+            "kospi_rate" : float(kospi_rate.replace("%",'')),
+            "kosdaq_index" : float(kosdaq_index.replace(",",'')),
+            "kosdaq_rate" : float(kosdaq_rate.replace("%",'')),
         })
 
         # DataFrame 생성
@@ -169,45 +163,40 @@ def crawl_kospi_kosdaq_data(**kwargs):
         if data :
             # 데이터프레임 생성 및 저장
             df = pd.DataFrame(data)
+            #print("뉴스 데이터 생성 완료")
+            ti = kwargs['ti']
+            path_kos = f"kospi_kosdaq_data_{datetime.now().strftime('%Y%m%d')}.csv"
+            df.to_csv(path_kos, index=False, encoding="utf-8-sig")
+            ti.xcom_push(key='path_kos', value=path_kos)
             print("뉴스 데이터 생성 완료")
         else :
             print("데이터가 없어 파일을 생성하지 않았습니다.")
 
-    return df
-
-def save_load_data(**kwargs) :
+def save_load_data(**kwargs):
     ti = kwargs['ti']
-    data_news = crawl_stock_data()
-    data_kos  = crawl_kospi_kosdaq_data()
+    path_news = ti.xcom_pull(task_ids='crawl_stock_data', key='path_news')
+    path_kos = ti.xcom_pull(task_ids='crawl_kospi_kosdaq_data', key='path_kos')
 
-    # 뉴스 DF
-    path_news = f"naverNews_{datetime.now().strftime('%Y%m%d')}.csv"
-    data_news.to_csv(path_news, index=False, encoding="utf-8-sig")
-    print(f"뉴스 CSV 파일 생성 완료.")
-    ti.xcom_push(key='path_news', value=path_news)
+    if not path_news or not path_kos:
+        raise ValueError("XCom에서 받은 파일 경로가 None입니다. 이전 작업을 확인하세요.")
 
-    # 코스피코스닥 DF
-    path_kos = f"kospi_kosdaq_data_{datetime.now().strftime('%Y%m%d')}.csv"
-    data_kos.to_csv(path_kos, index=False, encoding='utf-8-sig')
-    print(f"코스피코스닥 CSV 파일 생성 완료.")
-    ti.xcom_push(key='path_kos', value=path_kos)
-
-    path_news = ti.xcom_pull(task_ids='save_news_data', key='path_news')
-    path_kos = ti.xcom_pull(task_ids='save_kos_data', key='path_kos')
-
+    # S3 업로드
     s3_hook = S3Hook(aws_conn_id='aws_conn')
     s3_hook.load_file(
-        filename=ti.xcom_pull(task_ids='save_news_data', key='path_news'),
+        filename=path_news,
         bucket_name='team6-s3',
         replace=True,
         key=f"raw_data/{os.path.basename(path_news)}"
     )
+    print("네이버 뉴스 S3 적재완료")
     s3_hook.load_file(
-        filename=ti.xcom_pull(task_ids='save_kos_data', key='path_kos'),
+        filename=path_kos,
         bucket_name='team6-s3',
         replace=True,
         key=f"raw_data/{os.path.basename(path_kos)}"
     )
+    print("네이버 코스피코스닥 S3 적재완료")
+
 
 # Redshift 테이블 생성 함수
 def create_and_load_redshift_tables(**kwargs):
@@ -232,10 +221,20 @@ def create_and_load_redshift_tables(**kwargs):
         );
         """,
         """
+        DELETE FROM navernews;
+        """,
+        """
         CREATE TABLE IF NOT EXISTS kospiKosdaqData (
-            indexName VARCHAR(20),
-            value VARCHAR(40)
+            date DATE NOT NULL,                -- 날짜
+            kospi_index FLOAT NOT NULL,        -- 코스피 지수
+            kospi_rate FLOAT NOT NULL,         -- 코스피 등락률
+            kosdaq_index FLOAT NOT NULL,       -- 코스닥 지수
+            kosdaq_rate FLOAT NOT NULL 
         );
+        """
+        ,
+        """
+        DELETE FROM kospiKosdaqData;
         """
     ]
 
@@ -247,12 +246,9 @@ def create_and_load_redshift_tables(**kwargs):
     print("Redshift 테이블 생성 완료.")
 
     # 데이터 적재
-    ti = kwargs['ti']
     s3_paths = {
-        #'naverNews': ti.xcom_pull(task_ids='upload_to_s3', key='path_news'),
-        #'kospiKosdaqData': ti.xcom_pull(task_ids='upload_to_s3', key='path_kos')
-        'naverNews': f"s3://team6-s3/raw_data/{ti.xcom_pull(task_ids='upload_to_s3', key='path_news')}",
-        'kospiKosdaqData': f"s3://team6-s3/raw_data/{ti.xcom_pull(task_ids='upload_to_s3', key='path_kos')}"
+        'naverNews': f"s3://team6-s3/raw_data/naverNews_{datetime.now().strftime('%Y%m%d')}.csv",
+        'kospiKosdaqData': f"s3://team6-s3/raw_data/kospi_kosdaq_data_{datetime.now().strftime('%Y%m%d')}.csv"
     }
     aws_conn = BaseHook.get_connection("aws_conn")
     access_key = aws_conn.login
@@ -324,4 +320,4 @@ create_and_load_redshift_task = PythonOperator(
 )
 
 # Task 순서 정의
-crawl_stock_task >> crawl_kospi_kosdaq_task  >> upload_to_s3_task >> create_and_load_redshift_task
+crawl_stock_task >> crawl_kospi_kosdaq_task >> upload_to_s3_task >> create_and_load_redshift_task
