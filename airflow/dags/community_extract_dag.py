@@ -1,6 +1,8 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+from airflow.hooks.base import BaseHook
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -422,7 +424,64 @@ def upload_to_s3_trasformed_data(**kwargs):
             replace=True,
             key=f"transformed_data/{os.path.basename(file_path)}"
         )
+
+# 6. Create Redshift table
+def create_redshift_tables():
+    queries = [
+        """
+        CREATE TABLE IF NOT EXISTS community_top10 (
+            stockName VARCHAR(255) NOT NULL,
+            mentionCount INTEGER NOT NULL
+        );
+        """,
+        """
+        DELETE FROM community_top10;
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS community_top_keyword (
+            keyword VARCHAR(255) NOT NULL,
+            mentionCount INTEGER NOT NULL
+        );
+        """,
+        """
+        DELETE FROM community_top_keyword;
+        """
+    ]
+
+    postgres_hook = PostgresHook(postgres_conn_id="redshift_conn")
+    conn = postgres_hook.get_conn()
+    cursor = conn.cursor()
     
+    for query in queries:
+        cursor.execute(query)
+    
+    conn.commit()
+    print("[Done] Success to create Redshift table.")
+    
+    s3_paths = {
+        'community_top10': f"s3://team6-s3/transformed_data/community_top10_data_{datetime.now().strftime('%Y%m%d')}.csv",
+        'community_top_keyword': f"s3://team6-s3/transformed_data/community_top_keyword_data_{datetime.now().strftime('%Y%m%d')}.csv"
+    }
+    aws_conn = BaseHook.get_connection("aws_conn")
+    access_key = aws_conn.login
+    secret_key = aws_conn.password
+    
+    for table_name, s3_path in s3_paths.items():
+
+        copy_query = f"""
+        COPY {table_name}
+        FROM '{s3_path}'
+        ACCESS_KEY_ID '{access_key}'
+        SECRET_ACCESS_KEY '{secret_key}'
+        CSV DELIMITER ',' IGNOREHEADER 1;
+        """
+        cursor.execute(copy_query)
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+    print("[Done] Success to save data on Redshift")
+
 # Task 
 crawling_data_task = PythonOperator(
     task_id='save_crawling_data',
@@ -454,4 +513,10 @@ upload_s3_transformed_data_task = PythonOperator(
     dag=dag
 )
 
-crawling_data_task >> extract_raw_data_task >> upload_s3_task >> extract_transformed_data_task >> upload_s3_transformed_data_task
+create_redshift_tables_task = PythonOperator(
+    task_id='create_redshift_tables',
+    python_callable=create_redshift_tables,
+    dag=dag
+)
+
+crawling_data_task >> extract_raw_data_task >> upload_s3_task >> extract_transformed_data_task >> upload_s3_transformed_data_task >> create_redshift_tables_task
