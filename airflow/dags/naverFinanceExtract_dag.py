@@ -74,17 +74,17 @@ def crawl_stock_data(**kwargs):
 
             stock_code = int(driver.find_element(By.CLASS_NAME, 'HeaderResearch_tag__qwHzD').text.replace(stock_name, ""))
 
-            investment_opinion = driver.find_element(By.CLASS_NAME, 'ResearchConsensus_text__BFWiw').text
+            investment_opinion = driver.find_element(By.CLASS_NAME, 'ResearchConsensus_text__BFWiw').text.replace("매수","buy")
 
             try:
                 target_price_text = driver.find_element(By.CLASS_NAME, 'ResearchConsensus_price___VI3M').text.split("\n")[-1]
-                target_price = int(target_price_text.replace(",", "").replace("원", ""))
+                target_price = float(target_price_text.replace(",", "").replace("원", ""))
             except:
                 target_price = None
 
             try:
                 current_price_text = driver.find_element(By.CLASS_NAME, 'ResearchConsensus_price_today__zpk_T').text.split("\n")[-1]
-                current_price = int(current_price_text.replace(",", "").replace("원", ""))
+                current_price = float(current_price_text.replace(",", "").replace("원", ""))
             except:
                 current_price = None
 
