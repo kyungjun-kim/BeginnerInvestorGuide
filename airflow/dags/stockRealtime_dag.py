@@ -42,14 +42,15 @@ def fetch_stock_data(**kwargs):
 
     data_list = []
     for stock in stock_list:
+        stock_code = str(stock["종목코드"]).zfill(6)
         params = {
             "FID_COND_MRKT_DIV_CODE": "J",
-            "FID_INPUT_ISCD": stock["종목코드"],
+            "FID_INPUT_ISCD": stock_code,
         }
         response = requests.get(endpoint, headers=headers, params=params)
         if response.status_code == 200:
             data = response.json().get("output", {})
-            data["종목코드"] = stock["종목코드"]
+            data["종목코드"] = stock_code
             data["종목명"] = stock["종목명"]
             data_list.append(data)
 
@@ -99,6 +100,9 @@ def process_stock_data(**kwargs):
     # 스키마에 맞는 컬럼만 선택
     filtered_df = df[list(column_mapping.keys())]
     filtered_df.rename(columns=column_mapping, inplace=True)
+
+    # 종목코드 앞에 0을 채우고 문자열로 강제 변환
+    filtered_df["종목코드"] = filtered_df["종목코드"].astype(str).str.zfill(6)
 
     # 데이터 타입 변환
     dtype_mapping = {
