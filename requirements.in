@@ -6,3 +6,6 @@ webdriver_manager==4.0.2
 apache-airflow[celery]==2.7.3
 s3fs
 beautifulsoup4==4.12.2
+transformers==4.31.0
+torch
+sentencepiece
