@@ -60,7 +60,7 @@ def get_fmkorea_posts(base_url):
     
     today = datetime.now()
     yesterday = today - timedelta(days=1)
-    date_start = (today - timedelta(days=1)).replace(hour=23, minute=0, second=0) #1시간 동안 올라온 게시물 (test)
+    date_start = (today - timedelta(days=1)).replace(hour=0, minute=0, second=0) 
     date_end = (today - timedelta(days=1)).replace(hour=23, minute=59, second=59)
     
     page = 1
@@ -366,14 +366,23 @@ def extract_transformed_data(**kwargs):
     # Read community raw data
     s3_hook = S3Hook(aws_conn_id='aws_conn')
 
-    # Load raw data (JSON format)
-    raw_data_obj = s3_hook.get_key(Key="raw_data/community_raw_data.csv", Bucket="team6-s3")
-    raw_data = json.loads(raw_data_obj.get()['Body'].read().decode('utf-8'))
-    raw_data_df = pd.DataFrame(raw_data)
+    # Load raw data (+ JSON format)
+    raw_data_obj = s3_hook.get_key(key=f"raw_data/community_raw_data_{datetime.now().strftime('%y%m%d')}.csv", bucket_name="team6-s3")
+    raw_data_df = pd.read_csv(raw_data_obj.get()['Body'], encoding='utf-8-sig')
+    # keywords column -> JSON transform
+    def safe_json_loads(x):
+        try:
+            x = x.replace("'", '"') if isinstance(x, str) else x
+            return json.loads(x) if pd.notnull(x) else {}
+        except (json.JSONDecodeError, TypeError):
+            print(f"[Warning] 잘못된 JSON: {x}")
+            return {}
+    
+    raw_data_df['keywords'] = raw_data_df['keywords'].apply(safe_json_loads)
 
     # Read stock name list
-    kospi_obj = s3_hook.get_key(Key="raw_data/kospi_stocks.csv", Bucket="team6-s3")
-    kospi_stocks_df = pd.read_csv(kospi_obj.get()['Body'])
+    kospi_obj = s3_hook.get_key(key="data/raw_data/kospi_stocks.csv", bucket_name="team6-s3")
+    kospi_stocks_df = pd.read_csv(kospi_obj.get()['Body'], encoding='utf-8-sig')
     kospi_stock_names = kospi_stocks_df['종목명'].tolist()
     
     # Extract top 10 mentioned stock 
@@ -405,7 +414,9 @@ def extract_transformed_data(**kwargs):
     
     top_keywords_path = f"/tmp/community_top_keyword_data_{datetime.now().strftime('%y%m%d')}.csv"
     top_keywords_df.to_csv(top_keywords_path, index=False, encoding='utf-8-sig')    
-    ti.xcom_push(key='top_keywords_path', value=top_stocks_path)
+    ti.xcom_push(key='top_keywords_path', value=top_keywords_path)
+    
+    print("[Done] Create transformed data.")
 
 # 5. Upload to S3
 def upload_to_s3_trasformed_data(**kwargs):
@@ -424,9 +435,15 @@ def upload_to_s3_trasformed_data(**kwargs):
             replace=True,
             key=f"transformed_data/{os.path.basename(file_path)}"
         )
+        
+    print("[Done] Upload transformed data to S3")
 
 # 6. Create Redshift table
-def create_redshift_tables():
+def create_redshift_tables(**kwargs):
+    postgres_hook = PostgresHook(postgres_conn_id="redshift_conn")
+    conn = postgres_hook.get_conn()
+    cursor = conn.cursor()
+    
     queries = [
         """
         CREATE TABLE IF NOT EXISTS community_top10 (
@@ -447,10 +464,6 @@ def create_redshift_tables():
         DELETE FROM community_top_keyword;
         """
     ]
-
-    postgres_hook = PostgresHook(postgres_conn_id="redshift_conn")
-    conn = postgres_hook.get_conn()
-    cursor = conn.cursor()
     
     for query in queries:
         cursor.execute(query)
