@@ -81,6 +81,8 @@ def process_stock_data(**kwargs):
 
     # 컬럼 매핑
     column_mapping = {
+        "종목코드": "종목코드",
+        "종목명": "종목명",
         "stck_bsop_date": "영업일자",
         "stck_oprc": "시가",
         "stck_hgpr": "최고가",
@@ -90,8 +92,6 @@ def process_stock_data(**kwargs):
         "prdy_vrss_vol_rate": "전일대비거래량비율",
         "prdy_vrss": "전일대비",
         "prdy_ctrt": "전일대비율",
-        "종목코드": "종목코드",
-        "종목명": "종목명",
     }
 
     # 필요한 컬럼만 필터링
@@ -105,7 +105,7 @@ def process_stock_data(**kwargs):
     dtype_mapping = {
         "종목코드": "string",
         "종목명": "string",
-        "영업일자": "string",
+        "영업일자": "datetime64[ms]",
         "시가": "int32",
         "최고가": "int32",
         "최저가": "int32",
@@ -117,7 +117,9 @@ def process_stock_data(**kwargs):
     }
 
     for column, dtype in dtype_mapping.items():
-        if column in filtered_df.columns:
+        if column == "영업일자":
+            filtered_df[column] = pd.to_datetime(filtered_df[column], format='%Y%m%d').dt.date
+        elif column in filtered_df.columns:
             filtered_df[column] = filtered_df[column].astype(dtype)
     
     # 데이터 저장
@@ -145,7 +147,7 @@ def create_redshift_table(**kwargs):
     CREATE TABLE transformed_stock_daily_price (
         종목코드 VARCHAR(12),
         종목명 VARCHAR(100),
-        영업일자 VARCHAR(8),
+        영업일자 DATE,
         시가 INT,
         최고가 INT,
         최저가 INT,
