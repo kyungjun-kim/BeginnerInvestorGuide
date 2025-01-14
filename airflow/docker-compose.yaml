@@ -173,8 +173,35 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+<<<<<<< HEAD
+        
+  superset:
+    container_name: superset
+    build: .
+    ports:
+    - "8088:8088"
+    environment:
+      SUPERSET_ADMIN_USER: admin
+      SUPERSET_ADMIN_PASSWORD: admin
+      SUPERSET_ADMIN_EMAIL: admin@example.com
+      SUPERSET_DATABASE_URL: mysql+mysqldb://airflow:airflow@mysql:3306/superset
+      FLASK_APP: superset
+      _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:- mysqlclient}
+    volumes:
+      - ./superset_home:/app/superset_home
+      - ./superset_home/superset_config.py:/app/pythonpath/superset_config.py
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: always
+    command: >
+      gunicorn -w 2 -k gthread -b 0.0.0.0:8088 "superset.app:create_app()"
+      
+  airflow-trigger:
+=======
 
   airflow-triggerer:
+>>>>>>> develop
     <<: *airflow-common
     command: triggerer
     healthcheck:
