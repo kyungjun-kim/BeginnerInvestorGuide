@@ -200,8 +200,8 @@ def get_clien_posts(base_url):
 
 # Load files from S3
 def load_s3_file(bucket_name, file_key, download_path):
-    s3 = boto3.client('s3')
-    s3.download_file(bucket_name, file_key, download_path)
+    s3_hook = S3Hook(aws_conn_id='aws_conn')
+    s3_hook.get_conn().download_file(bucket_name, file_key, download_path)
 
 def load_stopwords(file_path):
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -274,7 +274,7 @@ def crawling_data(**kwargs):
     all_posts = clien_posts + fm_posts
     
     crawling_df = pd.DataFrame(all_posts)
-    crawling_path = f"/tmp/community_crawling_{datetime.now()}.csv"
+    crawling_path = f"/tmp/community_crawling_{datetime.now().strftime('%y%m%d')}.csv"
     crawling_df.to_csv(crawling_path, index=False, encoding='utf-8-sig')
     
     ti.xcom_push(key='crawling_path', value=crawling_path)
@@ -297,7 +297,7 @@ def extract_stock_keywords(posts, alias_path, stopwords_path):
         text = str(post['title']) + " " + str(post['text'])
         text = re.sub(r'[^가-힣a-zA-Z0-9\s]', '', text)
 
-        matched_stocks, text = match_stock_names_with_aliases(text, stock_names, stock_aliases)
+        matched_stocks, text = match_stock_names_with_aliases(text, stock_aliases)
         kobert_keywords = extract_keywords_with_kobert(text, tokenizer, model, stopwords)
 
         keyword_counts = Counter(matched_stocks + kobert_keywords)
@@ -329,10 +329,12 @@ def extract_raw_data(**kwargs):
     
     alias_path = os.path.join(base_path, 'alias')
     stopwords_path = os.path.join(base_path, 'stopwords')
-    all_posts = ti.xcom_pull(task_ids='crawling_data', key='all_posts')
+    all_posts = ti.xcom_pull(task_ids='save_crawling_data', key='all_posts')
     
     results_df = extract_stock_keywords(all_posts, alias_path, stopwords_path)
-    raw_data_path = f"/tmp/community_raw_data_{datetime.now()}.csv"
+    print("[Done] Extract community raw data.")
+    
+    raw_data_path = f"/tmp/community_raw_data_{datetime.now().strftime('%y%m%d')}.csv"
     results_df.to_csv(raw_data_path, index=False, encoding='utf-8-sig')    
     ti.xcom_push(key='raw_data_path', value=raw_data_path)
     print("[Done] Create community raw data csv file.")
@@ -341,7 +343,7 @@ def extract_raw_data(**kwargs):
 def upload_to_s3(**kwargs):
     ti = kwargs['ti']
     file_paths = [
-        ti.xcom_pull(task_ids='crawling_data', key='crawling_path'),
+        ti.xcom_pull(task_ids='save_crawling_data', key='crawling_path'),
         ti.xcom_pull(task_ids='extract_raw_data', key='raw_data_path')
     ]
 
@@ -360,14 +362,16 @@ def extract_transformed_data(**kwargs):
     ti = kwargs['ti']
     
     # Read community raw data
-    s3 = boto3.client('s3')
-    obj = s3.get_object(Bucket="team6-s3", Key="raw_data/community_raw_data.csv")
-    raw_data = json.loads(obj['Body'].read().decode('utf-8'))
+    s3_hook = S3Hook(aws_conn_id='aws_conn')
+
+    # Load raw data (JSON format)
+    raw_data_obj = s3_hook.get_key(Key="raw_data/community_raw_data.csv", Bucket="team6-s3")
+    raw_data = json.loads(raw_data_obj.get()['Body'].read().decode('utf-8'))
     raw_data_df = pd.DataFrame(raw_data)
 
     # Read stock name list
-    kospi_obj = s3.get_object(Bucket="team6-s3", Key="raw_data/kospi_stocks.csv")
-    kospi_stocks_df = pd.read_csv(kospi_obj['Body'])
+    kospi_obj = s3_hook.get_key(Key="raw_data/kospi_stocks.csv", Bucket="team6-s3")
+    kospi_stocks_df = pd.read_csv(kospi_obj.get()['Body'])
     kospi_stock_names = kospi_stocks_df['종목명'].tolist()
     
     # Extract top 10 mentioned stock 
@@ -393,11 +397,11 @@ def extract_transformed_data(**kwargs):
     top_keywords = sorted(all_keywords.items(), key=lambda x: x[1], reverse=True)[:15]
     top_keywords_df = pd.DataFrame(top_keywords, columns=['keyword', 'mention_count'])
 
-    top_stocks_path = f"/tmp/community_top10_data_{datetime.now()}.csv"
+    top_stocks_path = f"/tmp/community_top10_data_{datetime.now().strftime('%y%m%d')}.csv"
     top_stocks_df.to_csv(top_stocks_path, index=False, encoding='utf-8-sig')    
     ti.xcom_push(key='top_stocks_path', value=top_stocks_path)
     
-    top_keywords_path = f"/tmp/community_top_keyword_data_{datetime.now()}.csv"
+    top_keywords_path = f"/tmp/community_top_keyword_data_{datetime.now().strftime('%y%m%d')}.csv"
     top_keywords_df.to_csv(top_keywords_path, index=False, encoding='utf-8-sig')    
     ti.xcom_push(key='top_keywords_path', value=top_stocks_path)
 
