@@ -31,13 +31,13 @@ def read_stock_codes_from_s3(**kwargs):
 def fetch_stock_data(**kwargs):
     stock_list = kwargs["ti"].xcom_pull(key="stock_list")
     api_conn = BaseHook.get_connection("koreainvestment_api")
-    endpoint = f"{api_conn.host}/uapi/domestic-stock/v1/quotations/inquire-price"
+    endpoint = f"{api_conn.host}/uapi/domestic-stock/v1/quotations/inquire-daily-price"
     headers = {
         "Content-Type": "application/json; charset=utf-8",
         "authorization": f"Bearer {api_conn.extra_dejson['access_token']}",
         "appkey": api_conn.extra_dejson["app_key"],
         "appsecret": api_conn.extra_dejson["app_secret"],
-        "tr_id": "FHKST01010100",
+        "tr_id": "FHKST01010400",
     }
 
     data_list = []
@@ -46,16 +46,19 @@ def fetch_stock_data(**kwargs):
         params = {
             "FID_COND_MRKT_DIV_CODE": "J",
             "FID_INPUT_ISCD": stock_code,
+            "FID_PERIOD_DIV_CODE": "D",
+            "FID_ORG_ADJ_PRC": "0",
         }
         response = requests.get(endpoint, headers=headers, params=params)
         if response.status_code == 200:
-            data = response.json().get("output", {})
-            data["종목코드"] = stock_code
-            data["종목명"] = stock["종목명"]
-            data_list.append(data)
+            outputs = response.json().get("output", [])
+            for data in outputs:
+                data["종목코드"] = stock_code
+                data["종목명"] = stock["종목명"]
+                data_list.append(data)
 
     current_date = datetime.now().strftime('%y%m%d')
-    raw_data_path = f"/tmp/raw_stock_current_price_data_{current_date}.csv"
+    raw_data_path = f"/tmp/raw_stock_daily_price_data_{current_date}.csv"
     pd.DataFrame(data_list).to_csv(raw_data_path, index=False, encoding="utf-8-sig")
     kwargs["ti"].xcom_push(key="raw_data_path", value=raw_data_path)
 
@@ -67,7 +70,7 @@ def upload_raw_to_s3(**kwargs):
     s3_hook.load_file(
         filename=raw_data_path,
         bucket_name="team6-s3",
-        key=f"raw_data/raw_stock_current_price_data_{current_date}.csv",
+        key=f"raw_data/raw_stock_daily_price_data_{current_date}.csv",
         replace=True,
     )
 
@@ -76,28 +79,22 @@ def process_stock_data(**kwargs):
     raw_data_path = kwargs["ti"].xcom_pull(key="raw_data_path")
     df = pd.read_csv(raw_data_path)
 
-    # Redshift 테이블 스키마에 맞게 컬럼 필터링 및 매핑
+    # 컬럼 매핑
     column_mapping = {
         "종목코드": "종목코드",
         "종목명": "종목명",
-        "iscd_stat_cls_code": "종목상태코드",
-        "rprs_mrkt_kor_name": "대표시장한글명",
-        "bstp_kor_isnm": "업종한글종목명",
-        "stck_prpr": "주식현재가",
+        "stck_bsop_date": "영업일자",
+        "stck_oprc": "시가",
+        "stck_hgpr": "최고가",
+        "stck_lwpr": "최저가",
+        "stck_clpr": "종가",
+        "acml_vol": "누적거래량",
+        "prdy_vrss_vol_rate": "전일대비거래량비율",
         "prdy_vrss": "전일대비",
-        "prdy_vrss_sign": "전일대비부호",
         "prdy_ctrt": "전일대비율",
-        "stck_oprc": "주식시가",
-        "stck_hgpr": "주식최고가",
-        "stck_lwpr": "주식최저가",
-        "stck_mxpr": "주식상한가",
-        "stck_llam": "주식하한가",
-        "stck_sdpr": "주식기준가",
-        "mrkt_warn_cls_code": "시장경고코드",
-        "short_over_yn": "단기과열여부",
     }
 
-    # 스키마에 맞는 컬럼만 선택
+    # 필요한 컬럼만 필터링
     filtered_df = df[list(column_mapping.keys())]
     filtered_df.rename(columns=column_mapping, inplace=True)
 
@@ -106,32 +103,28 @@ def process_stock_data(**kwargs):
 
     # 데이터 타입 변환
     dtype_mapping = {
-        "종목코드": "string",             # VARCHAR
-        "종목명": "string",              # VARCHAR
-        "종목상태코드": "string",         # VARCHAR
-        "대표시장한글명": "string",       # VARCHAR
-        "업종한글종목명": "string",       # VARCHAR
-        "주식현재가": "int32",           # INTEGER
-        "전일대비": "int32",            # INTEGER
-        "전일대비부호": "string",         # VARCHAR
-        "전일대비율": "float32",         # FLOAT4
-        "주식시가": "int32",            # INTEGER
-        "주식최고가": "int32",          # INTEGER
-        "주식최저가": "int32",          # INTEGER
-        "주식상한가": "int32",          # INTEGER
-        "주식하한가": "int32",          # INTEGER
-        "주식기준가": "int32",          # INTEGER
-        "시장경고코드": "string",         # VARCHAR
-        "단기과열여부": "string",         # VARCHAR
+        "종목코드": "string",
+        "종목명": "string",
+        "영업일자": "datetime64[ms]",
+        "시가": "int32",
+        "최고가": "int32",
+        "최저가": "int32",
+        "종가": "int32",
+        "누적거래량": "int64",
+        "전일대비거래량비율": "float32",
+        "전일대비": "int32",
+        "전일대비율": "float32",
     }
 
     for column, dtype in dtype_mapping.items():
-        if column in filtered_df.columns:
+        if column == "영업일자":
+            filtered_df[column] = pd.to_datetime(filtered_df[column], format='%Y%m%d').dt.date
+        elif column in filtered_df.columns:
             filtered_df[column] = filtered_df[column].astype(dtype)
     
     # 데이터 저장
     current_date = datetime.now().strftime('%y%m%d')
-    processed_path = f"/tmp/transformed_stock_current_price_data_{current_date}.parquet"
+    processed_path = f"/tmp/transformed_stock_daily_price_data_{current_date}.parquet"
     filtered_df.to_parquet(processed_path, index=False)
     kwargs["ti"].xcom_push(key="processed_path", value=processed_path)
 
@@ -143,32 +136,26 @@ def upload_transformed_to_s3(**kwargs):
     s3_hook.load_file(
         filename=processed_path,
         bucket_name="team6-s3",
-        key=f"transformed_data/transformed_stock_current_price_data_{current_date}.parquet",
+        key=f"transformed_data/transformed_stock_daily_price_data_{current_date}.parquet",
         replace=True,
     )
 
 # Redshift 테이블 생성 함수
 def create_redshift_table(**kwargs):
     create_table_sql = """
-    DROP TABLE IF EXISTS transformed_stock_realtime_price;
-    CREATE TABLE transformed_stock_realtime_price (
+    DROP TABLE IF EXISTS transformed_stock_daily_price;
+    CREATE TABLE transformed_stock_daily_price (
         종목코드 VARCHAR(12),
         종목명 VARCHAR(100),
-        종목상태코드 VARCHAR(3),
-        대표시장한글명 VARCHAR(40),
-        업종한글종목명 VARCHAR(40),
-        주식현재가 INT,
+        영업일자 DATE,
+        시가 INT,
+        최고가 INT,
+        최저가 INT,
+        종가 INT,
+        누적거래량 BIGINT,
+        전일대비거래량비율 FLOAT,
         전일대비 INT,
-        전일대비부호 VARCHAR(5),
-        전일대비율 FLOAT,
-        주식시가 INT,
-        주식최고가 INT,
-        주식최저가 INT,
-        주식상한가 INT,
-        주식하한가 INT,
-        주식기준가 INT,
-        시장경고코드 VARCHAR(3),
-        단기과열여부 VARCHAR(1)
+        전일대비율 FLOAT
     );
     """
     postgres_hook = PostgresHook(postgres_conn_id="redshift_conn")
@@ -184,7 +171,7 @@ def upload_to_redshift(**kwargs):
     processed_path = kwargs["ti"].xcom_pull(key="processed_path")
     aws_conn = BaseHook.get_connection("aws_conn")
     copy_sql = f"""
-    COPY transformed_stock_realtime_price
+    COPY transformed_stock_daily_price
     FROM 's3://team6-s3/transformed_data/{os.path.basename(processed_path)}'
     ACCESS_KEY_ID '{aws_conn.login}'
     SECRET_ACCESS_KEY '{aws_conn.password}'
@@ -200,7 +187,7 @@ def upload_to_redshift(**kwargs):
 
 # DAG 정의
 with DAG(
-    dag_id="stock_realtime_data_dag",
+    dag_id="stock_daily_data_dag",
     default_args=default_args,
     schedule_interval="@daily",
     catchup=False,
