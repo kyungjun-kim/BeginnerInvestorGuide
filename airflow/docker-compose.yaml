@@ -173,32 +173,15 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
-  superset:
-    container_name: superset
-    image: apache/superset:latest
-    ports:
-      - "8088:8088"
-    environment:
-      SUPERSET_ADMIN_USER: admin
-      SUPERSET_ADMIN_PASSWORD: admin
-      SUPERSET_ADMIN_EMAIL: admin@example.com
-      SUPERSET_DATABASE_URL: sqlite:////app/superset_home/superset.db
-      FLASK_APP: superset
-    volumes:
-      - ./superset_home:/app/superset_home
-    depends_on:
-      mysql:
-        condition: service_healthy
-    restart: always
 
-  airflow-trigger:
+  airflow-triggerer:
     <<: *airflow-common
-    command: trigger
+    command: triggerer
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          'airflow jobs check --job-type TriggerJob --hostname "$${HOSTNAME}"',
+          'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"',
         ]
       interval: 30s
       timeout: 10s
