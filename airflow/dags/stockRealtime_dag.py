@@ -21,10 +21,46 @@ default_args = {
 # S3에서 종목 데이터를 읽어오는 함수
 def read_stock_codes_from_s3(**kwargs):
     s3_hook = S3Hook(aws_conn_id="aws_conn")
-    file_path = "data/stock_code.csv"  # S3의 종목코드 파일 경로
-    file_content = s3_hook.read_key(file_path, bucket_name="team6-s3")
-    stock_df = pd.read_csv(io.StringIO(file_content))
-    stock_list = stock_df.to_dict("records")
+
+    # community_top10_data 읽기
+    community_file_path = "transformed_data/community_top10_data_20250115.csv"
+    community_content = s3_hook.read_key(community_file_path, bucket_name="team6-s3")
+    community_df = pd.read_csv(io.StringIO(community_content))
+
+    # 종목명 컬럼 이름 매핑
+    if "stockName" in community_df.columns and "mentionCount" in community_df.columns:
+        community_df.rename(columns={"stockName": "종목명", "mentionCount": "언급수"}, inplace=True)
+    else:
+        raise ValueError("community_top10_data CSV 파일에 필요한 열(stockName, mentionCount)이 없습니다.")
+
+    # 언급순위 계산 (언급수가 높을수록 순위가 높음)
+    community_df["언급순위"] = community_df["언급수"].rank(method="min", ascending=False).astype(int)
+
+    # kospi_stocks 읽기
+    kospi_file_path = "data/raw_data/kospi_stocks.csv"
+    kospi_content = s3_hook.read_key(kospi_file_path, bucket_name="team6-s3")
+    kospi_df = pd.read_csv(io.StringIO(kospi_content))
+
+    # kosdaq_stocks 읽기
+    kosdaq_file_path = "data/raw_data/kosdaq_stocks.csv"
+    kosdaq_content = s3_hook.read_key(kosdaq_file_path, bucket_name="team6-s3")
+    kosdaq_df = pd.read_csv(io.StringIO(kosdaq_content))
+
+    # 단축코드 6자리로 맞추기
+    kospi_df["단축코드"] = kospi_df["단축코드"].astype(str).str.zfill(6)
+    kosdaq_df["단축코드"] = kosdaq_df["단축코드"].astype(str).str.zfill(6)
+
+    # kospi, kosdaq 병합
+    stock_codes_df = pd.concat([kospi_df, kosdaq_df], ignore_index=True)
+
+    # community_top10_data와 매칭
+    merged_df = pd.merge(community_df, stock_codes_df, on="종목명", how="inner")
+
+    # "단축코드"를 "종목코드"로 변경
+    merged_df.rename(columns={"단축코드": "종목코드"}, inplace=True)
+
+    # 필요한 데이터 추출
+    stock_list = merged_df[["종목명", "종목코드", "언급수", "언급순위"]].to_dict("records")
     kwargs["ti"].xcom_push(key="stock_list", value=stock_list)
 
 # API에서 데이터를 가져오는 함수
@@ -74,6 +110,7 @@ def upload_raw_to_s3(**kwargs):
 # 데이터를 처리하는 함수
 def process_stock_data(**kwargs):
     raw_data_path = kwargs["ti"].xcom_pull(key="raw_data_path")
+    stock_list = kwargs["ti"].xcom_pull(key="stock_list")  # 언급수와 언급순위 포함
     df = pd.read_csv(raw_data_path)
 
     # Redshift 테이블 스키마에 맞게 컬럼 필터링 및 매핑
@@ -104,6 +141,11 @@ def process_stock_data(**kwargs):
     # 종목코드 앞에 0을 채우고 문자열로 강제 변환
     filtered_df["종목코드"] = filtered_df["종목코드"].astype(str).str.zfill(6)
 
+    # 언급수와 언급순위 병합
+    mention_data = pd.DataFrame(stock_list)
+    mention_data["종목코드"] = mention_data["종목코드"].astype(str).str.zfill(6)
+    final_df = pd.merge(filtered_df, mention_data[["종목코드", "언급수", "언급순위"]], on="종목코드", how="left")
+
     # 데이터 타입 변환
     dtype_mapping = {
         "종목코드": "string",             # VARCHAR
@@ -123,16 +165,20 @@ def process_stock_data(**kwargs):
         "주식기준가": "int32",          # INTEGER
         "시장경고코드": "string",         # VARCHAR
         "단기과열여부": "string",         # VARCHAR
+        "언급수": "int32",
+        "언급순위": "int32",
     }
 
     for column, dtype in dtype_mapping.items():
-        if column in filtered_df.columns:
-            filtered_df[column] = filtered_df[column].astype(dtype)
+        if column == "영업일자":
+            final_df[column] = pd.to_datetime(final_df[column], format='%Y%m%d').dt.date
+        elif column in final_df.columns:
+            final_df[column] = final_df[column].astype(dtype)
     
     # 데이터 저장
     current_date = datetime.now().strftime('%y%m%d')
     processed_path = f"/tmp/transformed_stock_current_price_data_{current_date}.parquet"
-    filtered_df.to_parquet(processed_path, index=False)
+    final_df.to_parquet(processed_path, index=False)
     kwargs["ti"].xcom_push(key="processed_path", value=processed_path)
 
 # 처리된 데이터를 S3에 업로드하는 함수
@@ -168,7 +214,9 @@ def create_redshift_table(**kwargs):
         주식하한가 INT,
         주식기준가 INT,
         시장경고코드 VARCHAR(3),
-        단기과열여부 VARCHAR(1)
+        단기과열여부 VARCHAR(1),
+        언급수 INT,
+        언급순위 INT
     );
     """
     postgres_hook = PostgresHook(postgres_conn_id="redshift_conn")
