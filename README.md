@@ -1,7 +1,7 @@
 # 📊 주린이를 위한 시장 트렌드 분석
 ## 프로그래머스 데이터 엔지니어링 데브코스 4기 
-`[Team6] Engine-in-us`   📌 2024/12/18 - 2025/01/14
-
+### [Team6] Engine-in-us`   📌 2024/12/18 - 2025/01/14
+### 발표 자료 : https://www.canva.com/design/DAGcQWYv_1k/rbhzzpoUZg_eFX6CW2hdmQ/view?utm_content=DAGcQWYv_1k&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h0d097a5f90
 ---
 
 ## OVERVIEW
